@@ -179,3 +179,94 @@ def test_player_shows_the_shortcut_and_a_notice(tools, no_compiler, square):
     assert q.open_in_compiler() == not_found_message(JACKC_GUI)
     q._draw()  # a long notice is cut to fit
     pygame.quit()
+
+
+# --- "where is the compiler?" (locate_app.py) -----------------------------------------
+@pytest.fixture
+def findable(tmp_path, monkeypatch):
+    """
+    JackTools that find nothing until the (fake) folder chooser 'saves' the
+    compiler: like the real config file, the finders then see it.
+    """
+    import jackvm.jack_sources as jack_sources
+    from jackvm.locate_app import FOUND
+
+    monkeypatch.delenv("JACKC")  # not switched off: the chooser is offered
+    monkeypatch.delenv("JACKC_GUI")
+    saved = {}
+    jackc = Companion(JACKC, script(tmp_path, "fake_jackc.py", FAKE_JACKC), "test")
+    gui = Companion(JACKC_GUI, script(tmp_path, "fake_gui.py", FAKE_GUI), "test")
+    asked = []
+
+    def fake_locate(surface, app):
+        asked.append(app)
+        saved.update(jackc=jackc, gui=gui)
+        return FOUND, gui, "Found Jack compiler GUI - saved in config.ini"
+
+    monkeypatch.setattr(jack_sources, "locate", fake_locate)
+    tools = JackTools(lambda: saved.get("jackc"), lambda: saved.get("gui"))
+    tools.asked = asked
+    return tools
+
+
+def test_locate_saves_and_finds_the_compiler(findable):
+    assert findable.can_locate() and not findable.can_compile
+    outcome, message = findable.locate(surface=None)
+    assert outcome == "found" and message.startswith("Found")
+    assert findable.can_compile and findable.gui is not None and findable.asked == [JACKC_GUI]
+    assert not findable.can_locate()  # nothing missing any more
+
+
+def test_can_locate_is_false_when_switched_off(no_compiler):
+    assert not no_compiler.can_locate()  # conftest.py sets JACKC=off
+
+
+def test_player_ctrl_j_finds_the_compiler_then_opens_the_sources(findable, square):
+    (square / "Main.vm").write_text("function Main.main 0\npush constant 0\nreturn\n")
+    vm = VirtualMachine()
+    vm.load_source("function Sys.init 0\nlabel L\ngoto L\n")
+    p = Player(vm, files=[square / "Main.vm"], tools=findable)
+    p._open_window()
+    assert p.source_folder == square
+    assert any("Ctrl+J find compiler..." in row for row, _ in p.shortcuts.rows)
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_j, mod=pygame.KMOD_CTRL, unicode=""))
+    assert p._handle_events()
+    assert p._notice[0] == "Opened Square/ in the Jack compiler"
+    assert any("Ctrl+J open in compiler" in row for row, _ in p.shortcuts.rows)
+    pygame.quit()
+
+
+def test_player_ctrl_q_in_the_chooser_quits(no_compiler, square, monkeypatch):
+    import jackvm.jack_sources as jack_sources
+    from jackvm.locate_app import QUIT
+
+    monkeypatch.delenv("JACKC")
+    monkeypatch.delenv("JACKC_GUI")
+    monkeypatch.setattr(jack_sources, "locate", lambda surface, app: (QUIT, None, ""))
+    vm = VirtualMachine()
+    vm.load_source("function Sys.init 0\nlabel L\ngoto L\n")
+    p = Player(vm, files=[], tools=no_compiler)
+    p._open_window()
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_j, mod=pygame.KMOD_CTRL, unicode=""))
+    assert p._handle_events() is False
+    pygame.quit()
+
+
+def test_ctrl_j_in_the_picker_finds_the_compiler_and_reopens_it(findable, square, monkeypatch):
+    from jackvm.file_picker import CANCEL, FIND_COMPILER, FilePicker
+    from jackvm.player import choose_program
+
+    pygame.init()
+    surface = pygame.display.set_mode((820, 560))
+    seen = []
+
+    def fake_run(self):
+        seen.append((self.state.directory, self.state.can_compile, self.offer_find_compiler, self._footer(2000)))
+        return (FIND_COMPILER, None) if len(seen) == 1 else (CANCEL, None)
+
+    monkeypatch.setattr(FilePicker, "run", fake_run)
+    assert choose_program(surface, VirtualMachine(), square, findable) == (CANCEL, None)
+    (first_dir, could, offered, footer), (second_dir, can, offered_again, _) = seen
+    assert offered and "Ctrl+J: find the Jack compiler" in footer and not could
+    assert second_dir == first_dir and can and not offered_again  # same folder, now with .jack files
+    pygame.quit()

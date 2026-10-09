@@ -1,11 +1,12 @@
 """
-test_shared_files.py - integrations.py must match jack-compiler's copy.
-======================================================================
+test_shared_files.py - the shared files must match jack-compiler's copy.
+========================================================================
 
-jackvm-py and jack-compiler live in separate git repositories, but share one
-file word for word: integrations.py, the code that lets each app find the
-other. This test fails if the two copies drift apart, so a fix made in one
-repository isn't forgotten in the other.
+jackvm-py and jack-compiler live in separate git repositories, but share two
+files word for word: integrations.py, the code that lets each app find the
+other, and locate_app.py, the window that asks where it is. This test
+fails if the copies drift apart, so a fix made in one repository isn't
+forgotten in the other.
 
 Where is the other repository's copy?
   * $JACK_TOOLS_COMPANION - a checkout of jack-compiler (CI clones one there:
@@ -31,6 +32,7 @@ COMPANION = "jack-compiler"
 SHARED_FILES = [
     # (path in this repository, path in the companion repository)
     ("jackvm/integrations.py", "jack_compiler/integrations.py"),
+    ("jackvm/locate_app.py", "jack_compiler/locate_app.py"),
 ]
 
 

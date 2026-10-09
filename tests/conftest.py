@@ -18,6 +18,7 @@ them from the shell when you want to watch a test draw, e.g.
 """
 
 import os
+import tempfile
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -27,3 +28,7 @@ os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")  # skip pygame's "Hello
 # need one pass a fake (see tests/test_jack_sources.py). "off" disables it.
 os.environ["JACKC"] = "off"
 os.environ["JACKC_GUI"] = "off"
+
+# ...and never read or write the real config file (~/.config/jack-tools/config.ini):
+# tests that need one make their own (see tests/test_locate_app.py).
+os.environ["JACK_TOOLS_CONFIG"] = os.path.join(tempfile.gettempdir(), f"jack-tools-tests-{os.getpid()}", "config.ini")
