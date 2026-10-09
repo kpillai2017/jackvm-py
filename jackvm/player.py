@@ -74,8 +74,9 @@ from typing import List, Optional, Sequence, Tuple
 import pygame
 
 from .debugger import DebuggerPanel, build_sections, largest_sections
-from .file_picker import PLAY, QUIT, FilePicker
+from .file_picker import FIND_COMPILER, PLAY, QUIT, FilePicker
 from .jack_sources import JackCompileError, JackTools, describe_program, source_folder_for
+from .locate_app import QUIT as LOCATE_QUIT
 from .keyboard import Keyboard
 from .memory_map import SCREEN_HEIGHT, SCREEN_WIDTH
 from .parser import ParseError
@@ -162,7 +163,10 @@ class Player:
         """
         # The shortcuts box lines up with the outside edges of the screen's frame.
         frame = self.screen_rect.inflate(2 * FRAME_EXTENT, 2 * FRAME_EXTENT)
-        compiler = "Ctrl+J open in compiler" if self.tools.gui is not None else "Ctrl+J compiler (not installed)"
+        if self.tools.gui is not None:
+            compiler = "Ctrl+J open in compiler"
+        else:
+            compiler = "Ctrl+J find compiler..." if self.tools.can_locate() else "Ctrl+J compiler (not installed)"
         self.shortcuts = self.panel.shortcuts_section(frame.width, [compiler])
         self.shortcuts_rect = pygame.Rect(
             frame.left, frame.bottom + DebuggerPanel.GAP + 4,
@@ -268,6 +272,8 @@ class Player:
             self.show_debugger = not self.show_debugger
             self._resize_window()
         elif key == pygame.K_j:
+            if self.tools.gui is None and self.tools.can_locate():
+                return self.find_compiler()  # (then opens the sources, if found)
             self.open_in_compiler()
         elif key == pygame.K_o:
             return self._open_another_program()
@@ -278,6 +284,29 @@ class Player:
         message = self.tools.open_in_compiler(self.source_folder)
         self.notify(message)
         return message
+
+    def find_compiler(self) -> bool:
+        """
+        Ctrl+J when the Jack compiler isn't found: ask where it is (saved in
+        the config file), then open this program's sources in it. Returns
+        False if the user quit from the chooser (Ctrl+Q / closed the window).
+        """
+        self.keyboard.release_all()
+        self._esc_pressed_at = None
+        width, height = self.window.get_size()
+        if width < 800 or height < 560:
+            self.window = pygame.display.set_mode((max(width, 800), max(height, 560)))
+        outcome, message = self.tools.locate(self.window)
+        self._esc_needs_release = bool(pygame.key.get_pressed()[pygame.K_ESCAPE])
+        self.keyboard.release_all()  # keys pressed in the chooser aren't the game's
+        if outcome == LOCATE_QUIT:
+            return False
+        self._resize_window()  # back to the player's size (and the SHORTCUTS box may change)
+        if self.tools.gui is not None:
+            self.notify(message)
+            if self.source_folder is not None:
+                self.open_in_compiler()
+        return True
 
     def notify(self, text: str) -> None:
         """
@@ -446,8 +475,17 @@ def choose_program(
         picker = FilePicker(
             surface, start_directory, message, tools.can_compile,
             failed_folder if tools.gui is not None else None, tools.open_in_compiler, back_to,
+            offer_find_compiler=not tools.can_compile and tools.can_locate(),
         )  # fmt: skip
         outcome, picked = picker.run()
+        if outcome == FIND_COMPILER:
+            found, message = tools.locate(surface)
+            if found == LOCATE_QUIT:
+                return QUIT, None
+            if message:
+                print(message)
+            start_directory = picker.state.directory  # back where the user was, now with .jack files
+            continue
         if outcome != PLAY or not picked:
             return outcome, None
         files = picked

@@ -27,7 +27,11 @@ How the other app is found
          jackc = /opt/jack/venv/bin/jackc  # ...or the command itself
      A folder is searched for the command: in the folder itself, its bin/,
      or a virtual environment inside it (.venv, venv, env, .direnv/*).
+     A checkout that only had `pip install -r requirements.txt` (so there's
+     no command) is run from its source with that environment's Python.
      jackc-gui is also found in the folder given for jackc. "off" works here too.
+     The GUIs can write this file for you: when the other app isn't found,
+     Ctrl+J asks where it is (see locate_app.py).
   3. The same Python environment: each package advertises itself under the
      "jack_tools" entry-point group in its pyproject.toml, so after
          pip install -e ../jackvm-py      (or ../jack-compiler)
@@ -75,17 +79,24 @@ class App:
     executable: str  # command name to look for on the PATH (and its key in the config file)
     install_hint: str  # how to get it, shown when it isn't found
     config_fallback: str = ""  # another config key whose FOLDER also holds this app
+    entry: str = ""  # its "module:function", to run it from a checkout that wasn't pip-installed
+    repo: str = ""  # its repository's (usual) folder name
 
 
 JACKVM = App(
     "vm", "JackVM", "JACKVM", "jackvm",
     "git clone https://github.com/kpillai2017/jackvm-py.git && pip install -e ./jackvm-py",
+    entry="jackvm.main:main", repo="jackvm-py",
 )  # fmt: skip
 JACKC = App(
     "compiler", "Jack compiler", "JACKC", "jackc",
     "git clone https://github.com/kpillai2017/jack-compiler.git && pip install -e './jack-compiler[gui]'",
+    entry="jack_compiler.compiler:main", repo="jack-compiler",
 )  # fmt: skip
-JACKC_GUI = App("compiler-gui", "Jack compiler GUI", "JACKC_GUI", "jackc-gui", JACKC.install_hint, "jackc")
+JACKC_GUI = App(
+    "compiler-gui", "Jack compiler GUI", "JACKC_GUI", "jackc-gui", JACKC.install_hint, "jackc",
+    entry="jack_compiler.gui.main:main", repo="jack-compiler",
+)  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -138,17 +149,21 @@ def _importable(module: str) -> bool:
         return False
 
 
-def entry_point_command(value: str, program_name: str) -> List[str]:
+def entry_point_command(
+    value: str, program_name: str, python: Optional[str] = None, source_folder: Optional[Path] = None
+) -> List[str]:
     """
     A command line that runs an entry point such as "jackvm.main:main" with
-    this same Python interpreter - like the script pip would have made.
+    `python` (default: this same interpreter) - like the script pip would
+    have made. With `source_folder`, the code is imported from that checkout.
     """
     module, _, function = value.partition(":")
+    path = f"sys.path.insert(0, {str(source_folder)!r}); " if source_folder is not None else ""
     code = (
-        f"import sys; sys.argv[0] = {program_name!r}; "
+        f"import sys; {path}sys.argv[0] = {program_name!r}; "
         f"from {module} import {function or 'main'} as main; sys.exit(main())"
     )
-    return [sys.executable, "-c", code]
+    return [python or sys.executable, "-c", code]
 
 
 def config_path(environ: Optional[Mapping[str, str]] = None) -> Optional[Path]:
@@ -212,6 +227,102 @@ def command_in_folder(folder: Path, executable: str) -> Optional[str]:
     return None
 
 
+def python_in_folder(folder: Path) -> Optional[str]:
+    """The Python of a virtual environment inside a checkout (.venv, venv, env, .direnv/*), if any."""
+    for name in ("python", "python3"):
+        found = command_in_folder(folder, name)
+        if found and Path(found).parent != folder:  # a python in a bin/ folder, not a stray file
+            return found
+    return None
+
+
+def source_command(folder: Path, app: App) -> Optional[List[str]]:
+    """
+    Run `app` straight from a checkout whose requirements were installed
+    (pip install -r requirements.txt) but which wasn't pip-installed itself,
+    so it has no `jackvm` / `jackc` command: its venv's Python imports the
+    code from the folder.
+    """
+    package = app.entry.partition(":")[0].split(".")[0]
+    if not package or not (folder / package / "__init__.py").is_file():
+        return None
+    python = python_in_folder(folder)
+    return entry_point_command(app.entry, app.executable, python, folder.resolve()) if python else None
+
+
+def command_for_folder(folder: Path, app: App) -> Optional[List[str]]:
+    """How to run `app` from a folder: its installed command, else its source code."""
+    command = command_in_folder(folder, app.executable)
+    return [command] if command else source_command(folder, app)
+
+
+def check_folder(app: App, folder: Path) -> Optional[Companion]:
+    """Is `app` usable from this folder (e.g. one the user chose in the GUI)? Its Companion, or None."""
+    folder = Path(folder).expanduser()
+    command = command_for_folder(folder, app) if folder.is_dir() else None
+    return Companion(app, command, f"folder {folder}") if command else None
+
+
+def can_configure(app: App, environ: Optional[Mapping[str, str]] = None) -> bool:
+    """
+    Would saving a folder in the config file change anything? Not when the
+    environment variable is set (it wins over the file) or the app was
+    switched off on purpose.
+    """
+    environ = os.environ if environ is None else environ
+    if environ.get(app.env_var, "").strip():
+        return False
+    path = config_path(environ)
+    return path is not None and read_config(path).get(app.executable, "").lower() not in OFF_VALUES
+
+
+def save_setting(key: str, value: str, environ: Optional[Mapping[str, str]] = None) -> Path:
+    """
+    Set `key = value` in the [apps] section of the config file, creating the
+    file (and its folder) if needed. Everything else in the file - other
+    settings, comments - is kept. Returns the file's path. Raises OSError
+    if it can't be written.
+    """
+    path = config_path(environ)
+    if path is None:
+        raise OSError("there's no home folder to keep the config file in")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    except UnicodeDecodeError:
+        lines = []
+    new_line = f"{key} = {value}"
+    section, header, done = "", None, False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped[1:-1].strip().lower()
+            if section == CONFIG_SECTION:
+                header = index
+        elif section == CONFIG_SECTION and stripped.split("=", 1)[0].strip().lower() == key.lower() and "=" in stripped:
+            lines[index] = new_line
+            done = True
+            break
+    if not done:
+        if header is None:
+            lines += ([""] if lines and lines[-1].strip() else []) + [f"[{CONFIG_SECTION}]"]
+            header = len(lines) - 1
+        lines.insert(header + 1, new_line)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def start_folder_for(app: App) -> Path:
+    """
+    Where a "where is it?" folder chooser should start: the folder that holds
+    this checkout, since the other repository is often cloned next to it.
+    """
+    root = Path(__file__).resolve().parent.parent  # this repository (if it's a checkout)
+    if (root / "pyproject.toml").is_file() and root.parent.is_dir():
+        return root.parent
+    return Path.home()
+
+
 OFF = object()  # _from_config's "switched off" answer
 
 
@@ -229,15 +340,15 @@ def _from_config(app: App, settings: Mapping[str, str], path: Optional[Path]) ->
             folder = _as_folder(value)
             if folder is None:
                 return Companion(app, split_command(value), found_by)
-            command = command_in_folder(folder, app.executable)
-            return Companion(app, [command], found_by) if command else None
+            command = command_for_folder(folder, app)
+            return Companion(app, command, found_by) if command else None
         # e.g. jackc-gui: look where jackc is (its folder, or next to its command).
         other = settings.get(app.config_fallback, "") if app.config_fallback else ""
         folder = _as_folder(other) or (_as_folder(str(Path(split_command(other)[0]).parent)) if other else None)
     except ValueError:  # e.g. an unclosed quote: ignore the setting rather than crash
         return None
-    command = command_in_folder(folder, app.executable) if folder else None
-    return Companion(app, [command], found_by) if command else None
+    command = command_for_folder(folder, app) if folder else None
+    return Companion(app, command, found_by) if command else None
 
 
 def find(

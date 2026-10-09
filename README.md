@@ -120,6 +120,7 @@ You can play **either** of these:
 | ↑ ↓ PgUp PgDn, mouse wheel | move through the list |
 | Esc / Quit | quit. When you came here from a program (Esc or Ctrl+O), the button reads **Back**, and Esc returns to that program |
 | Ctrl+Q | quit |
+| Ctrl+J | without jack-compiler: find it ([how](#running-jack-source-directly-with-jack-compiler)); after a failed compile: open the code in its window |
 
 If the files you choose contain a mistake, the picker stays open and shows
 the problem (with its line number) in red at the top.
@@ -153,7 +154,7 @@ Hold **Ctrl** (or **Cmd ⌘** on a Mac) so the game doesn't receive the key:
 | Ctrl+R | restart the program |
 | Ctrl+D | show / hide the debugger panel |
 | Ctrl+O | open another program (the file picker) |
-| Ctrl+J | open the program's `.jack` sources in [jack-compiler](https://github.com/kpillai2017/jack-compiler)'s window, if it's installed |
+| Ctrl+J | open the program's `.jack` sources in [jack-compiler](https://github.com/kpillai2017/jack-compiler)'s window (the first time, it asks where jack-compiler is) |
 | **Hold** Esc for 1 s | go back to the file picker (a bar shows the countdown; let go to cancel) |
 | Esc, once the program has finished | go back to the file picker straight away |
 | Ctrl+Q | quit (closing the window works too) |
@@ -285,18 +286,23 @@ Each app finds the other like this (the first match wins; see
    # jackc = off                           ; switch it off
    ```
 
-   A value is either the project's folder (the app must be installed in a
-   virtual environment inside it) or the full path of the command. The file
+   A value is either the project's folder (the app installed in a virtual
+   environment inside it, or just its requirements: then its source is run
+   with that environment's Python) or the full path of the command. The file
    follows `XDG_CONFIG_HOME`, and `JACK_TOOLS_CONFIG=/some/file.ini` points
    to a different one.
 3. **The same Python environment**: both packages register themselves in
    the `jack_tools` entry-point group, so `pip install -e` is enough.
 4. **The `PATH`**: a `jackc` / `jackc-gui` command installed anywhere else.
 
-Without the compiler, everything works as before, and the shortcuts box
-shows `Ctrl+J compiler (not installed)`; pressing it (or choosing a `.jack`
-folder) says what to put in the config file. The two apps only run each other's
-commands and never import each other's code.
+**The easiest way to set it up:** without the compiler, everything works as
+before, and the shortcuts box shows `Ctrl+J find compiler...`. Press it (or
+**Ctrl+J** in the file picker), open your `jack-compiler` folder in the chooser
+(folders where it can run are marked `[use]`), and press **Use this folder**.
+That saves `jackc = <the folder>` in the config file, and from then on both apps
+find each other from any folder. If the lookup is switched off (`JACKC=off`, or
+`off` in the config file), the shortcut reads `Ctrl+J compiler (not installed)`.
+The two apps only run each other's commands and never import each other's code.
 
 ---
 
@@ -322,7 +328,8 @@ jackvm-py/
 │   ├── file_picker.py ⑪ the "choose a program" browser (GUI)
 │   ├── main.py        ⑫ the command line (python -m jackvm ...)
 │   ├── jack_sources.py   run .jack source by calling jack-compiler first
-│   └── integrations.py   find jack-compiler (shared with that repository)
+│   ├── integrations.py   find jack-compiler (shared with that repository)
+│   └── locate_app.py     "where is it?" folder chooser for Ctrl+J (shared too)
 ├── games/             ready-to-run programs, one folder per game
 │   └── pong/          Main.vm, Ball.vm, Bat.vm, PongGame.vm (one per class)
 ├── tests/             pytest tests (+ fixtures/ for long test programs)
@@ -373,6 +380,12 @@ Its key table also had no Page Down key.
 * **`ModuleNotFoundError: No module named 'pygame'`.** Activate the virtual
   environment (`source .venv/bin/activate`) and run
   `python3 -m pip install -r requirements.txt`.
+* **`jackvm: command not found`.** The `jackvm` command only exists after
+  `python3 -m pip install -e .` in the active virtual environment.
+  `requirements.txt` alone installs pygame but no command: use
+  `python3 -m jackvm` then. A *new* environment is always empty, including
+  the one direnv's `layout python` makes in an `.envrc`, so install into it
+  once. `which python` should point inside it.
 * **`No module named jackvm`.** Run the command from inside the `jackvm-py`
   folder, or install it with `python3 -m pip install -e .` and then just type
   `jackvm pong`. (If that says *"editable mode currently requires a

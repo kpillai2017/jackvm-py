@@ -32,9 +32,10 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from .integrations import JACKC, JACKC_GUI, Companion, find, not_found_message
+from .integrations import JACKC, JACKC_GUI, Companion, can_configure, find, not_found_message
+from .locate_app import locate
 from .program_files import describe, resolve_paths, vm_files_in
 
 COMPILE_TIMEOUT_SECONDS = 300
@@ -135,8 +136,31 @@ class JackTools:
         compiler_finder: Callable[[], Optional[Companion]] = lambda: find(JACKC),
         gui_finder: Callable[[], Optional[Companion]] = lambda: find(JACKC_GUI),
     ) -> None:
-        self.compiler = compiler_finder()
-        self.gui = gui_finder()
+        self._finders = (compiler_finder, gui_finder)
+        self.refresh()
+
+    def refresh(self) -> None:
+        """Look for the compiler again (e.g. after its folder was saved in the config file)."""
+        self.compiler = self._finders[0]()
+        self.gui = self._finders[1]()
+
+    def can_locate(self) -> bool:
+        """Is something missing that the user could point us at (see locate)?"""
+        return (self.compiler is None or self.gui is None) and can_configure(JACKC) and can_configure(JACKC_GUI)
+
+    def locate(self, surface) -> Tuple[str, str]:
+        """
+        Ask the user where jack-compiler is, in a folder chooser drawn on
+        `surface` (locate_app.py). It's saved in the config file, so it's
+        found from then on. Returns (outcome, message): outcome is
+        locate_app's FOUND, CANCEL or QUIT.
+        """
+        outcome, companion, message = locate(surface, JACKC_GUI)
+        if companion is not None:
+            self.refresh()  # finds jackc and jackc-gui through the config file
+            if self.gui is None:  # (the config file couldn't be saved)
+                self.gui = companion
+        return outcome, message
 
     @property
     def can_compile(self) -> bool:

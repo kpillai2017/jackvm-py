@@ -65,6 +65,7 @@ from .jack_sources import jack_files_in
 PLAY = "play"  # the user chose something to run
 CANCEL = "cancel"  # the user pressed Esc / Back / Quit (the caller decides which it means)
 QUIT = "quit"  # the user closed the window
+FIND_COMPILER = "find-compiler"  # Ctrl+J without a Jack compiler: ask where it is
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +240,7 @@ class FilePicker:
         compiler_folder: Optional[Path] = None,
         open_in_compiler=None,
         back_to: str = "",
+        offer_find_compiler: bool = False,
     ) -> None:
         import pygame  # imported here so the logic above works without pygame
 
@@ -254,6 +256,9 @@ class FilePicker:
         # the function that does it (JackTools.open_in_compiler).
         self.compiler_folder = compiler_folder
         self.open_in_compiler = open_in_compiler
+        # No Jack compiler found? Ctrl+J ends the picker with FIND_COMPILER,
+        # and choose_program asks where it is (see locate_app.py).
+        self.offer_find_compiler = offer_find_compiler
         self.font = pygame.font.SysFont("menlo,consolas,dejavusansmono,couriernew,monospace", 15)
         self.small = pygame.font.SysFont("menlo,consolas,dejavusansmono,couriernew,monospace", 13)
         self.row_height = self.font.get_linesize() + 8
@@ -303,6 +308,8 @@ class FilePicker:
             if ctrl and event.key == pygame.K_j and self.compiler_folder and self.open_in_compiler:
                 state.message = self.open_in_compiler(self.compiler_folder)
                 print(state.message)
+            elif ctrl and event.key == pygame.K_j and self.offer_find_compiler:
+                return FIND_COMPILER, None
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 files = state.play_folder_entry() if ctrl else state.activate()
             elif event.key in (pygame.K_BACKSPACE, pygame.K_LEFT):
@@ -463,6 +470,8 @@ class FilePicker:
         ]  # fmt: skip
         if self.compiler_folder and self.open_in_compiler:
             parts.append("Ctrl+J: open in compiler")
+        elif self.offer_find_compiler:
+            parts.append("Ctrl+J: find the Jack compiler")
         for drop in ("Backspace: up", "Enter: open", "Ctrl+Enter: play folder"):
             if self.small.size("   ".join(parts))[0] <= width:
                 break
