@@ -1,0 +1,9 @@
+# Libraries this project needs. Install them with:
+#     python3 -m pip install -r requirements.txt
+#
+# Tested with Python 3.9 (pygame 2.6.1, pytest 8.4) and
+# Python 3.13 (pygame 2.6.1, pytest 9.1).
+# pip automatically picks the newest versions that work with your Python.
+
+pygame>=2.6.1   # draws the window and reads the keyboard
+pytest>=8       # runs the automated tests (only needed for `python3 -m pytest`)

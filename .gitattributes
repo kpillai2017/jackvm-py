@@ -1,0 +1,7 @@
+# Store text files with Unix line endings (LF) in git, whatever the computer.
+# Windows users still get their usual line endings when they check files out.
+* text=auto
+*.vm text
+*.py text
+*.md text
+*.png binary

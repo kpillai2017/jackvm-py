@@ -1,0 +1,44 @@
+function Util.outputMessage 0
+push argument 1
+push argument 2
+call Output.moveCursor 2
+pop temp 0
+push argument 0
+call Output.printString 1
+pop temp 0
+push argument 0
+call String.dispose 1
+pop temp 0
+push constant 0
+return
+function Util.clearScreen 1
+push constant 16384
+pop local 0
+label WHILE_EXP0
+push local 0
+push constant 24576
+lt
+not
+if-goto WHILE_END0
+push local 0
+push constant 1
+neg
+call Memory.poke 2
+pop temp 0
+push local 0
+push constant 1
+add
+pop local 0
+goto WHILE_EXP0
+label WHILE_END0
+push constant 0
+return
+function Util.mod 0
+push argument 0
+push argument 0
+push argument 1
+call Math.divide 2
+push argument 1
+call Math.multiply 2
+sub
+return

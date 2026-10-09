@@ -1,0 +1,46 @@
+# GitHub Actions: run the test suite automatically on every push and pull
+# request. Results appear in the "Actions" tab of the repository on GitHub.
+#
+# No real screen is needed: tests/conftest.py tells pygame to use SDL's
+# "dummy" video and audio drivers.
+
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # let every combination finish, even if one fails
+      matrix:
+        os: [ubuntu-latest]
+        # The oldest supported Python, a middle one, and the newest tested one.
+        python-version: ["3.9", "3.11", "3.13"]
+        include:
+          # Also check the other desktop systems people will play on.
+          - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.13"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run the tests
+        run: python -m pytest -v
+
+      - name: Smoke-test the command line (headless)
+        run: python -m jackvm hello-world --headless --ticks 200000

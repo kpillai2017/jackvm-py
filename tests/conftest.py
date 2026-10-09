@@ -1,0 +1,24 @@
+"""
+conftest.py - shared set-up for every test.
+===========================================
+
+pytest automatically loads this file BEFORE it imports any test module, so
+it's the right place for settings that must be in place before pygame starts.
+
+SDL (the library underneath pygame) reads these environment variables when
+it starts up:
+
+* SDL_VIDEODRIVER=dummy  -> draw into memory; no real window pops up.
+                            Tests still get real pixels they can check.
+* SDL_AUDIODRIVER=dummy  -> no sound card needed (CI machines don't have one).
+
+`setdefault` means: only if not already set, so you can still override
+them from the shell when you want to watch a test draw, e.g.
+`SDL_VIDEODRIVER=cocoa python3 -m pytest tests/test_player.py`.
+"""
+
+import os
+
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")  # skip pygame's "Hello from..." banner
