@@ -2,9 +2,10 @@
 test_shared_files.py - the shared files must match jack-compiler's copy.
 ========================================================================
 
-jackvm-py and jack-compiler live in separate git repositories, but share two
+jackvm-py and jack-compiler live in separate git repositories, but share a few
 files word for word: integrations.py, the code that lets each app find the
-other, and locate_app.py, the window that asks where it is. This test
+other, locate_app.py, the window that asks where it is, and
+config.example.ini, the template for the config file they read. This test
 fails if the copies drift apart, so a fix made in one repository isn't
 forgotten in the other.
 
@@ -33,6 +34,7 @@ SHARED_FILES = [
     # (path in this repository, path in the companion repository)
     ("jackvm/integrations.py", "jack_compiler/integrations.py"),
     ("jackvm/locate_app.py", "jack_compiler/locate_app.py"),
+    ("config.example.ini", "config.example.ini"),
 ]
 
 

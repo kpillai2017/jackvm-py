@@ -262,3 +262,54 @@ def test_keys_move_and_open(chooser):
 def test_the_footer_fits(chooser):
     for width in (300, 500, 800):
         assert chooser.small.size(chooser.footer(width))[0] <= width or len(chooser.footer(width).split("   ")) == 2
+
+
+def test_comments_can_end_a_line_in_the_config_file(tmp_path):
+    path = tmp_path / "config.ini"
+    path.write_text("[apps]\njackvm = ~/code/jackvm-py   ; my checkout\njackc = /c#sharp/jack-compiler  # here\n")
+    assert read_config(path) == {"jackvm": "~/code/jackvm-py", "jackc": "/c#sharp/jack-compiler"}
+
+
+# --- config.example.ini (the template, shared by both repositories) ---------------------
+TEMPLATE = ROOT / "config.example.ini"
+
+
+def test_the_template_changes_nothing_until_you_edit_it(tmp_path):
+    environ, path = config_env(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(TEMPLATE.read_text(encoding="utf-8"), encoding="utf-8")
+    assert read_config(path) == {}  # every example is commented out
+    assert can_configure(JACKVM, environ)
+
+
+def test_the_template_documents_every_app():
+    text = TEMPLATE.read_text(encoding="utf-8")
+    assert "[apps]" in text
+    for app in (JACKVM, JACKC, JACKC_GUI):
+        assert f"; {app.executable} = " in text
+
+
+def test_each_example_in_the_template_works_once_uncommented(tmp_path):
+    examples = [line[2:] for line in TEMPLATE.read_text(encoding="utf-8").splitlines() if line.startswith("; ")]
+    assert len(examples) >= 6
+    path = tmp_path / "config.ini"
+    for example in examples:
+        path.write_text(f"[apps]\n{example}\n", encoding="utf-8")
+        key, _, value = example.partition(" = ")
+        assert read_config(path) == {key: value}
+
+
+def test_the_chooser_can_save_into_a_copy_of_the_template(tmp_path):
+    environ, path = config_env(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(TEMPLATE.read_text(encoding="utf-8"), encoding="utf-8")
+    save_setting("jackvm", "/code/jackvm-py", environ)
+    assert read_config(path) == {"jackvm": "/code/jackvm-py"}
+    assert "; jackvm = ~/code/jackvm-py" in path.read_text()  # the examples are kept
+
+
+def test_a_new_config_file_points_to_the_template(tmp_path):
+    environ, path = config_env(tmp_path)
+    save_setting("jackc", "/c", environ)
+    assert path.read_text().startswith("# jack-tools config") and "config.example.ini" in path.read_text()
+    assert path.read_text().endswith("\n[apps]\njackc = /c\n")
