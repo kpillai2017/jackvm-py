@@ -17,7 +17,7 @@ import pytest
 
 from jackvm import VirtualMachine, __version__
 from jackvm.file_picker import PickerState, list_entries
-from jackvm.integrations import JACKC, JACKC_GUI, JACKVM, Companion, find
+from jackvm.integrations import JACKC, JACKC_GUI, JACKVM, Companion, find, not_found_message
 from jackvm.jack_sources import JackCompileError, JackTools, describe_program, source_folder_for
 from jackvm.main import main
 from jackvm.player import Player
@@ -120,8 +120,9 @@ def test_compile_errors_come_back_short_with_the_full_output(tools, square):
 
 
 def test_without_a_compiler_old_vm_files_still_play_and_jack_explains(no_compiler, square):
-    with pytest.raises(FileNotFoundError, match="install the Jack compiler: git clone"):
+    with pytest.raises(FileNotFoundError) as caught:
         no_compiler.prepare([str(square)])
+    assert str(caught.value).endswith(f"is Jack source code (.jack), so it needs the Jack compiler.\n{not_found_message(JACKC)}")
     (square / "Main.vm").write_text("function Main.main 0\npush constant 0\nreturn\n")
     assert [f.name for f in no_compiler.prepare([str(square)])] == ["Main.vm"]
     assert not no_compiler.can_compile
@@ -135,7 +136,7 @@ def test_ctrl_j_opens_the_sources_in_the_compiler_gui(tools, no_compiler, square
         subprocess.run([sys.executable, "-c", "import time; time.sleep(0.05)"])
     assert (square / "opened.txt").read_text() == "yes"
     assert tools.open_in_compiler(None) == "No .jack sources next to this program"
-    assert no_compiler.open_in_compiler(square).startswith("Jack compiler not found. Install it:")
+    assert no_compiler.open_in_compiler(square) == not_found_message(JACKC_GUI)  # (depends on the setup)
 
 
 # --- the command line and the picker -----------------------------------------------
@@ -175,6 +176,6 @@ def test_player_shows_the_shortcut_and_a_notice(tools, no_compiler, square):
     q = Player(vm, files=files, tools=no_compiler)
     q._open_window()
     assert any("Ctrl+J compiler (not installed)" in row for row, _ in q.shortcuts.rows)
-    assert q.open_in_compiler().startswith("Jack compiler not found")
+    assert q.open_in_compiler() == not_found_message(JACKC_GUI)
     q._draw()  # a long notice is cut to fit
     pygame.quit()

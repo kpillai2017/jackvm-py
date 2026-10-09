@@ -34,7 +34,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
-from .integrations import JACKC, JACKC_GUI, Companion, find
+from .integrations import JACKC, JACKC_GUI, Companion, find, not_found_message
 from .program_files import describe, resolve_paths, vm_files_in
 
 COMPILE_TIMEOUT_SECONDS = 300
@@ -154,9 +154,8 @@ class JackTools:
             if folder is None or (self.compiler is None and path.is_dir() and vm_files_in(path)):
                 files.extend(resolve_paths([name]))  # .vm files (or no compiler: the old .vm files)
             elif self.compiler is None:
-                raise FileNotFoundError(
-                    f"{name} is Jack source code (.jack). To run it, install the Jack compiler: {JACKC.install_hint}"
-                )
+                raise FileNotFoundError(f"{name} is Jack source code (.jack), so it needs the Jack compiler.\n"
+                                        f"{not_found_message(JACKC)}")  # fmt: skip
             else:
                 print(f"Compiling {folder.name}/ with the Jack compiler...")
                 files.extend(compile_folder(folder, self.compiler))
@@ -167,7 +166,7 @@ class JackTools:
         if folder is None:
             return "No .jack sources next to this program"
         if self.gui is None:
-            return f"Jack compiler not found. Install it: {JACKC.install_hint}"
+            return not_found_message(JACKC_GUI)
         try:
             self.gui.launch([str(folder)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError as problem:

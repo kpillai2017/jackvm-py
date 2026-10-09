@@ -123,6 +123,26 @@ def test_keyboard_navigation(tree, surface):
     assert outcome == PLAY and [f.name for f in files] == ["Ball.vm", "Main.vm"]
     assert picker._handle_event(key(pygame.K_ESCAPE)) == (CANCEL, None)
     assert picker._handle_event(pygame.event.Event(pygame.QUIT)) == (QUIT, None)
+    assert picker._handle_event(key(pygame.K_q, pygame.KMOD_CTRL)) == (QUIT, None)
+    picker._esc_needs_release = True  # opened while Esc was held down
+    assert picker._handle_event(key(pygame.K_ESCAPE)) is None
+    picker._handle_event(pygame.event.Event(pygame.KEYUP, key=pygame.K_ESCAPE, mod=0))
+    assert picker._handle_event(key(pygame.K_ESCAPE)) == (CANCEL, None)
+
+
+@pytest.mark.parametrize("back_to, esc, button", [("", "Esc: quit", "Quit"), ("pong/", "Esc: back to pong/", "Back")])
+@pytest.mark.parametrize("with_compiler", [False, True])
+def test_the_picker_says_what_esc_does_and_fits(tree, surface, monkeypatch, back_to, esc, button, with_compiler):
+    surface = pygame.display.set_mode((800, 560))  # the smallest picker window
+    picker = FilePicker(surface, tree, compiler_folder=tree if with_compiler else None,
+                        open_in_compiler=(lambda f: "") if with_compiler else None, back_to=back_to)  # fmt: skip
+    drawn = []
+    monkeypatch.setattr(picker, "_text", lambda text, *a, **k: drawn.append(text))
+    monkeypatch.setattr(picker, "_button", lambda rect, label, **k: drawn.append(label))
+    picker.draw()
+    footer = next(t for t in drawn if "Ctrl+Q: quit" in t)
+    assert esc in footer and button in drawn and ("Ctrl+J" in footer) == with_compiler
+    assert picker.small.size(footer)[0] <= 800 - 2 * picker.MARGIN  # fits the smallest window
 
 
 def test_mouse_clicks_on_rows_and_buttons(tree, surface):

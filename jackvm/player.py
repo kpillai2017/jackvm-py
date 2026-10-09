@@ -42,16 +42,20 @@ Games are animated by repeating these steps about 60 times per second
     3. Draw the screen memory (and the debugger panel) into the window.
     4. Wait a little so we don't redraw faster than 60 frames per second.
 
-Quitting with Esc - without stealing Esc from the game
-------------------------------------------------------
+Esc goes back to the file picker - without stealing Esc from the game
+---------------------------------------------------------------------
 Some games use Esc themselves (Pong uses it to end the game), so a plain
-"Esc quits" would break them. Instead:
+"Esc goes back" would break them. Instead:
 
   * While the program runs, Esc is ALWAYS passed to the game. If you keep
-    holding it for ESC_HOLD_SECONDS (1 s), the player quits. A bar appears
-    after ESC_SHOW_BAR_AFTER (0.25 s), so normal taps never flash it.
+    holding it for ESC_HOLD_SECONDS (1 s), the player goes back to the
+    picker. A bar appears after ESC_SHOW_BAR_AFTER (0.25 s), so normal
+    taps never flash it.
   * Once the program has finished (HALTED) or crashed (ERROR), the game
-    can't read keys any more - so a single Esc press quits immediately.
+    can't read keys any more - so a single Esc press goes back at once.
+  * In the picker, Esc (or "Back") returns to this program, which carries
+    on from where it was; the very first picker has nothing to return to,
+    so there Esc quits. Ctrl+Q (or closing the window) always quits at once.
 
 How many VM instructions per frame?
 -----------------------------------
@@ -83,7 +87,7 @@ FRAMES_PER_SECOND = 60
 TIME_BUDGET_SECONDS = 0.012  # VM time per frame in "time budget" mode
 CHUNK = 2_000  # instructions to run between clock checks
 
-ESC_HOLD_SECONDS = 1.0  # hold Esc this long to quit
+ESC_HOLD_SECONDS = 1.0  # hold Esc this long (while running) to go back to the picker
 ESC_SHOW_BAR_AFTER = 0.25  # ...and show the "keep holding" bar after this long
 NOTICE_SECONDS = 5.0  # how long a message such as "Opened in the compiler" shows
 
@@ -129,6 +133,7 @@ class Player:
         # fake clock and "hold" Esc for exactly 1 second without waiting.
         self.now = time.perf_counter
         self._esc_pressed_at: Optional[float] = None  # None = Esc not held
+        self._esc_needs_release = False  # True = ignore Esc until it's let go (see go_back)
 
         # For the speed read-out in the debugger.
         self._speed = 0.0
@@ -185,7 +190,9 @@ class Player:
         self._open_window()
         clock = pygame.time.Clock()
         try:
-            while self._handle_events() and not self._esc_held_long_enough():
+            while self._handle_events():
+                if self._esc_held_long_enough() and not self.go_back():
+                    break  # the user quit from the picker
                 self._run_vm_for_one_frame()
                 self._draw()
                 clock.tick(FRAMES_PER_SECOND)
@@ -206,20 +213,27 @@ class Player:
                         return False
                     continue
                 if event.key == pygame.K_ESCAPE:
+                    if self._esc_needs_release:
+                        continue  # still the Esc that was held in the picker
                     if self.program_finished():
-                        return False  # nothing left to protect: quit now
-                    self._esc_pressed_at = self.now()  # start the hold timer
+                        if not self.go_back():  # nothing left to protect: back to the picker now
+                            return False
+                        continue
+                    if self._esc_pressed_at is None:  # (ignore key-repeat events)
+                        self._esc_pressed_at = self.now()  # start the hold timer
                 self.keyboard.press(event.key, event.unicode)  # the game gets it too
 
             elif event.type == pygame.KEYUP:
                 if event.key == pygame.K_ESCAPE:
-                    self._esc_pressed_at = None  # let go early: cancel quitting
+                    self._esc_pressed_at = None  # let go early: don't go back
+                    self._esc_needs_release = False
                 self.keyboard.release(event.key)
 
             elif event.type == pygame.WINDOWFOCUSLOST:
                 # Otherwise a key held while switching windows would "stick".
                 self.keyboard.release_all()
                 self._esc_pressed_at = None
+                self._esc_needs_release = False
         return True
 
     def program_finished(self) -> bool:
@@ -227,7 +241,7 @@ class Player:
         return bool(self.error) or self.vm.is_halted()
 
     def esc_hold_progress(self) -> float:
-        """How far through the 'hold Esc to quit' countdown we are: 0.0 .. 1.0."""
+        """How far through the 'hold Esc to go back' countdown we are: 0.0 .. 1.0."""
         if self._esc_pressed_at is None:
             return 0.0
         held_for = self.now() - self._esc_pressed_at
@@ -266,18 +280,26 @@ class Player:
         return message
 
     def notify(self, text: str) -> None:
-        """Show a short message over the bottom of the game screen for a few seconds."""
+        """
+        Show a short message over the bottom of the game screen for a few
+        seconds. Only its first line fits; the terminal gets all of it.
+        """
         print(text)
-        self._notice = (text, self.now() + NOTICE_SECONDS)
+        self._notice = (text.split("\n")[0], self.now() + NOTICE_SECONDS)
+
+    def go_back(self) -> bool:
+        """Esc: back to the file picker (see _open_another_program)."""
+        return self._open_another_program()
 
     def _open_another_program(self) -> bool:
         """
-        Ctrl+O: show the file picker inside our window. If the user picks
-        something, load it and start it; if they cancel, carry on as before.
-        Returns False if the user closed the window (= quit).
+        Ctrl+O (or Esc): show the file picker inside our window. If the user
+        picks something, load it and start it; if they go back, carry on as
+        before. Returns False if the user quit from the picker (Ctrl+Q /
+        closed the window).
         """
         self.keyboard.release_all()
-        self._esc_pressed_at = None  # Esc in the picker means "cancel", not "quit"
+        self._esc_pressed_at = None  # Esc in the picker means "back here", not "quit"
         start = self.files[0].parent if self.files else GAMES_FOLDER
 
         # A tiny window (e.g. --scale 1 --no-debugger) is too cramped for a
@@ -286,7 +308,11 @@ class Player:
         if width < 800 or height < 560:
             self.window = pygame.display.set_mode((max(width, 800), max(height, 560)))
 
-        outcome, files = choose_program(self.window, self.vm, start, self.tools)
+        outcome, files = choose_program(self.window, self.vm, start, self.tools, back_to=describe_program(self.files) if self.files else "the program")
+        # If Esc is still down (it was held to get here), its key-repeat must
+        # not send us straight back to the picker: wait until it's let go.
+        self._esc_needs_release = bool(pygame.key.get_pressed()[pygame.K_ESCAPE])
+        self.keyboard.release_all()  # keys pressed in the picker aren't the game's
         if outcome == PLAY:
             self.files = files
             self.source_folder = source_folder_for(files)
@@ -342,14 +368,14 @@ class Player:
         pygame.draw.rect(self.window, FRAME_COLOUR, frame, width=FRAME_WIDTH, border_radius=4)
 
     def _draw_quit_hints(self) -> None:
-        """The 'keep holding Esc' bar, or a 'press Esc to quit' note at the end."""
+        """The 'keep holding Esc' bar, or a 'press Esc to go back' note at the end."""
         progress = self.esc_hold_progress()
         if self._esc_pressed_at is not None and progress * ESC_HOLD_SECONDS >= ESC_SHOW_BAR_AFTER:
-            self._draw_banner("Keep holding Esc to quit...", progress)
+            self._draw_banner("Keep holding Esc to go back...", progress)
         elif self._notice is not None and self.now() < self._notice[1]:
             self._draw_banner(self._notice[0], None)
         elif self.program_finished():
-            self._draw_banner("Program finished - press Esc to quit", None)
+            self._draw_banner("Program finished - press Esc to go back, Ctrl+Q to quit", None)
 
     def _draw_banner(self, text: str, progress: Optional[float]) -> None:
         """A dark, see-through box over the bottom of the game screen."""
@@ -397,7 +423,7 @@ class Player:
 # Choosing a program with the GUI file picker
 # ---------------------------------------------------------------------------
 def choose_program(
-    surface, vm: VirtualMachine, start_directory: Path, tools: Optional[JackTools] = None
+    surface, vm: VirtualMachine, start_directory: Path, tools: Optional[JackTools] = None, back_to: str = ""
 ) -> Tuple[str, Optional[List[Path]]]:
     """
     Show the file picker on `surface` until the user picks a program that
@@ -409,6 +435,8 @@ def choose_program(
     compiled first, if the Jack compiler is installed; if it has mistakes,
     Ctrl+J in the picker opens it in the compiler's window.
 
+    `back_to` names what Esc returns to ("" in the first picker, where Esc quits).
+
     Returns (outcome, files) - outcome is "play", "cancel" or "quit".
     """
     tools = tools if tools is not None else JackTools()
@@ -417,7 +445,7 @@ def choose_program(
     while True:
         picker = FilePicker(
             surface, start_directory, message, tools.can_compile,
-            failed_folder if tools.gui is not None else None, tools.open_in_compiler,
+            failed_folder if tools.gui is not None else None, tools.open_in_compiler, back_to,
         )  # fmt: skip
         outcome, picked = picker.run()
         if outcome != PLAY or not picked:
