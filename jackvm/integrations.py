@@ -31,8 +31,10 @@ If none of them works, `find()` returns None and the GUI shows how to
 install the missing app instead of the shortcut.
 
 This file is shared: the same copy lives in both repositories
-(jack_compiler/integrations.py and jackvm/integrations.py). Keep them in
-sync. It only uses the standard library, and works on Python 3.8+.
+(jack_compiler/integrations.py and jackvm/integrations.py). If you change
+one, copy it over the other: tests/test_shared_files.py in each repository
+fails when the two differ (CI fetches the other repository to compare).
+It only uses the standard library, and works on Python 3.8+.
 """
 
 from __future__ import annotations
