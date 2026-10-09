@@ -9,6 +9,11 @@ It runs the `.vm` programs you produce in the
 Systems*): Pong, Space Invaders, your own Jack games. It shows them in a
 desktop window and has a **live memory debugger** beside it.
 
+🛠️ **Companion project:** [jack-compiler](https://github.com/kpillai2017/jack-compiler)
+compiles Jack to VM code with compiler-style error messages. Install both, and
+jackvm runs `.jack` source directly. See
+[Running Jack source directly](#running-jack-source-directly-with-jack-compiler).
+
 ```
 ╔══════════════════════════════════════════╗  ┌─ STATUS ─────────────┐
 ║                                          ║  │ RUNNING  pc 9338 sub │
@@ -147,6 +152,7 @@ Hold **Ctrl** (or **Cmd ⌘** on a Mac) so the game doesn't receive the key:
 | Ctrl+R | restart the program |
 | Ctrl+D | show / hide the debugger panel |
 | Ctrl+O | open another program (the file picker) |
+| Ctrl+J | open the program's `.jack` sources in [jack-compiler](https://github.com/kpillai2017/jack-compiler)'s window, if it's installed |
 | Ctrl+Q | quit (closing the window works too) |
 | **Hold** Esc for 1 s | quit (a bar shows the countdown; let go to cancel) |
 | Esc, once the program has finished | quit straight away |
@@ -210,7 +216,9 @@ the official nand2tetris test scripts.
    ```bash
    tools/JackCompiler.sh projects/09/MyGame      # Windows: JackCompiler.bat
    ```
-   (Or use the compiler you built in project 11!)
+   (Or use the compiler you built in project 11, or
+   [jack-compiler](https://github.com/kpillai2017/jack-compiler). With
+   jack-compiler you can skip this step: see below.)
 3. Run the folder:
    ```bash
    python3 -m jackvm projects/09/MyGame
@@ -222,6 +230,52 @@ You **don't** need to include the OS `.vm` files. If your program has
 `Main.main` but no `Sys.init`, the built-in Jack OS (`jackvm/os/JackOS.vm`)
 is added automatically. If you write your *own* OS class (e.g. your project
 12 `Math.vm`), yours is used instead of the built-in one.
+
+### Running Jack source directly (with jack-compiler)
+
+[**jack-compiler**](https://github.com/kpillai2017/jack-compiler) is a
+companion project in its own repository: a Jack-to-VM compiler with
+compiler-style error messages and its own window (`jackc-gui`). If it's
+installed too, you can skip step 2 and run the **Jack source** itself:
+
+```bash
+python3 -m jackvm projects/09/MyGame          # compiles the .jack files, then runs them
+python3 -m jackvm projects/09/MyGame/Main.jack   # one file means its whole folder
+```
+
+- The picker lists `.jack` files and offers `[compile+play N .jack]` for
+  folders. When a folder has both, the `.jack` files win, because they're
+  the ones you've been editing.
+- The `.vm` output goes into a temporary folder, so your project folder
+  isn't changed.
+- If the code has a mistake, the compiler's message is shown (for example
+  `Main.jack:3:7: error: 'x' is not declared`), and **Ctrl+J** opens the
+  folder in `jackc-gui`, which marks each mistake in the code.
+- While a program runs, **Ctrl+J** opens its sources in `jackc-gui`. There,
+  **Ctrl+J** runs them back here.
+
+Set it up once, side by side:
+
+```bash
+git clone https://github.com/kpillai2017/jackvm-py.git
+git clone https://github.com/kpillai2017/jack-compiler.git
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ./jackvm-py -e "./jack-compiler[gui]"   # one environment: found automatically
+```
+
+Each app finds the other like this (the first match wins; see
+[`jackvm/integrations.py`](jackvm/integrations.py)):
+
+1. **An environment variable**: `JACKC` / `JACKC_GUI` (and `JACKVM` for the
+   other direction), e.g. `JACKC="/path/to/jack-compiler/.venv/bin/jackc"`.
+   Set it to `off` to switch the integration off.
+2. **The same Python environment**: both packages register themselves in
+   the `jack_tools` entry-point group, so `pip install -e` is enough.
+3. **The `PATH`**: a `jackc` / `jackc-gui` command installed anywhere else.
+
+Without the compiler, everything works as before, and the shortcuts box
+shows `Ctrl+J compiler (not installed)`. The two apps only run each other's
+commands and never import each other's code.
 
 ---
 
@@ -245,7 +299,9 @@ jackvm-py/
 │   ├── player.py      ⑨ the pygame window and main loop
 │   ├── program_files.py ⑩ finding .vm files (file, folder or game name)
 │   ├── file_picker.py ⑪ the "choose a program" browser (GUI)
-│   └── main.py        ⑫ the command line (python -m jackvm ...)
+│   ├── main.py        ⑫ the command line (python -m jackvm ...)
+│   ├── jack_sources.py   run .jack source by calling jack-compiler first
+│   └── integrations.py   find jack-compiler (shared with that repository)
 ├── games/             ready-to-run programs, one folder per game
 │   └── pong/          Main.vm, Ball.vm, Bat.vm, PongGame.vm (one per class)
 ├── tests/             pytest tests (+ fixtures/ for long test programs)

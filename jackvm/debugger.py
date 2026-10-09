@@ -220,7 +220,7 @@ class DebuggerPanel:
         return total + self.GAP * max(0, len(sections) - 1)
 
     # --- the shortcuts box (drawn under the game screen) ---------------------------
-    def shortcuts_section(self, width: int) -> Section:
+    def shortcuts_section(self, width: int, extra: Sequence[str] = ()) -> Section:
         """
         Arrange HELP_ITEMS into rows that fit inside a box `width` pixels wide.
 
@@ -231,7 +231,8 @@ class DebuggerPanel:
         usable = width - 2 * self.PADDING
         rows: List[str] = []
         current = ""
-        for item in HELP_ITEMS:
+        quit_at = HELP_ITEMS.index("Ctrl+Q quit")  # `extra` items go just before quitting
+        for item in [*HELP_ITEMS[:quit_at], *extra, *HELP_ITEMS[quit_at:]]:
             candidate = item if not current else current + HELP_SEPARATOR + item
             if current and self.font.size(candidate)[0] > usable:
                 rows.append(current)  # row is full: start a new one

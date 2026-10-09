@@ -9,6 +9,12 @@ simple file browser drawn inside the pygame window:
     python -m jackvm --gui      # same thing, explicitly
     Ctrl+O while a game runs    # open the picker to switch programs
 
+If the Jack compiler (https://github.com/kpillai2017/jack-compiler) is
+installed, the picker also lists .jack files and offers "[compile+play]"
+for folders of Jack source - see jack_sources.py. If the code has a
+mistake, the first error shows at the top and Ctrl+J opens the folder in
+the compiler's window.
+
 You can play either:
 
   * a single **.vm file**  - click it, or
@@ -53,6 +59,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from . import program_files
+from .jack_sources import jack_files_in
 
 # What the picker can end with:
 PLAY = "play"  # the user chose something to run
@@ -67,9 +74,10 @@ QUIT = "quit"  # the user closed the window
 class Entry:
     """One row in the file list."""
 
-    kind: str  # "parent" (the .. row), "folder" or "vm"
+    kind: str  # "parent" (the .. row), "folder", "vm" or "jack"
     path: Path
     vm_count: int = 0  # for folders: how many .vm files are directly inside
+    jack_count: int = 0  # ...and how many .jack files (only counted if we can compile)
 
     @property
     def label(self) -> str:
@@ -88,17 +96,18 @@ def vm_files_in(folder: Path) -> List[Path]:
         return []
 
 
-def list_entries(directory: Path) -> List[Entry]:
+def list_entries(directory: Path, show_jack: bool = False) -> List[Entry]:
     """
     Everything the picker shows for `directory`, in display order:
-    the parent folder first, then sub-folders, then .vm files.
+    the parent folder first, then sub-folders, then .vm files (and .jack
+    files, if `show_jack` - i.e. the Jack compiler is installed).
     Hidden items (names starting with ".") and other file types are skipped.
     """
     entries: List[Entry] = []
     if directory.parent != directory:  # the top of the disk has no parent
         entries.append(Entry("parent", directory.parent))
 
-    folders, vm_files = [], []
+    folders, vm_files, jack_files = [], [], []
     try:
         children = sorted(directory.iterdir(), key=lambda p: p.name.lower())
     except OSError:
@@ -108,12 +117,15 @@ def list_entries(directory: Path) -> List[Entry]:
             continue
         try:
             if child.is_dir():
-                folders.append(Entry("folder", child, len(vm_files_in(child))))
+                jack_count = len(jack_files_in(child)) if show_jack else 0
+                folders.append(Entry("folder", child, len(vm_files_in(child)), jack_count))
             elif child.suffix.lower() == ".vm":
                 vm_files.append(Entry("vm", child))
+            elif show_jack and child.suffix.lower() == ".jack":
+                jack_files.append(Entry("jack", child))
         except OSError:
             continue  # unreadable item: just leave it out
-    return entries + folders + vm_files
+    return entries + folders + vm_files + jack_files
 
 
 class PickerState:
@@ -123,14 +135,15 @@ class PickerState:
     the list of .vm files to play, or None to keep browsing.
     """
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, can_compile: bool = False) -> None:
         self.message = ""  # feedback shown to the user (e.g. an error)
+        self.can_compile = can_compile  # is the Jack compiler installed?
         self.open_folder(directory)
 
     # --- navigation -------------------------------------------------------
     def open_folder(self, directory: Path) -> None:
         self.directory = Path(directory).expanduser().resolve()
-        self.entries = list_entries(self.directory)
+        self.entries = list_entries(self.directory, self.can_compile)
         # Start on the first real item rather than on "..", if there is one.
         self.selected = 1 if len(self.entries) > 1 and self.entries[0].kind == "parent" else 0
         self.message = ""
@@ -157,7 +170,7 @@ class PickerState:
         if not self.entries:
             return None
         entry = self.entries[self.selected]
-        if entry.kind == "vm":
+        if entry.kind in ("vm", "jack"):  # a .jack file means "compile its folder"
             return [entry.path]
         if entry.kind == "parent":
             self.go_up()
@@ -172,7 +185,7 @@ class PickerState:
         if not self.entries:
             return None
         entry = self.entries[self.selected]
-        if entry.kind == "vm":
+        if entry.kind in ("vm", "jack"):
             return [entry.path]
         if entry.kind == "folder":
             return self._play_folder(entry.path)
@@ -183,14 +196,20 @@ class PickerState:
         return self._play_folder(self.directory)
 
     def _play_folder(self, folder: Path) -> Optional[List[Path]]:
+        if self.can_compile and jack_files_in(folder):
+            return [folder]  # Jack source: compiled before it's played
         files = vm_files_in(folder)
         if not files:
-            self.message = f"There are no .vm files directly inside {folder.name or folder}/"
+            kinds = ".vm or .jack" if self.can_compile else ".vm"
+            self.message = f"There are no {kinds} files directly inside {folder.name or folder}/"
             return None
         return files
 
     def current_folder_vm_count(self) -> int:
         return sum(1 for e in self.entries if e.kind == "vm")
+
+    def current_folder_jack_count(self) -> int:
+        return sum(1 for e in self.entries if e.kind == "jack")
 
 
 # ---------------------------------------------------------------------------
@@ -211,13 +230,25 @@ class FilePicker:
 
     MARGIN = 16
 
-    def __init__(self, surface, start_directory: Path, message: str = "") -> None:
+    def __init__(
+        self,
+        surface,
+        start_directory: Path,
+        message: str = "",
+        can_compile: bool = False,
+        compiler_folder: Optional[Path] = None,
+        open_in_compiler=None,
+    ) -> None:
         import pygame  # imported here so the logic above works without pygame
 
         self.pygame = pygame
         self.surface = surface
-        self.state = PickerState(start_directory)
+        self.state = PickerState(start_directory, can_compile)
         self.state.message = message
+        # After a failed compile: the folder Ctrl+J opens in the compiler, and
+        # the function that does it (JackTools.open_in_compiler).
+        self.compiler_folder = compiler_folder
+        self.open_in_compiler = open_in_compiler
         self.font = pygame.font.SysFont("menlo,consolas,dejavusansmono,couriernew,monospace", 15)
         self.small = pygame.font.SysFont("menlo,consolas,dejavusansmono,couriernew,monospace", 13)
         self.row_height = self.font.get_linesize() + 8
@@ -260,7 +291,9 @@ class FilePicker:
             ctrl = event.mod & (pygame.KMOD_CTRL | pygame.KMOD_META)
             if event.key == pygame.K_ESCAPE:
                 return CANCEL, None
-            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if ctrl and event.key == pygame.K_j and self.compiler_folder and self.open_in_compiler:
+                state.message = self.open_in_compiler(self.compiler_folder)
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 files = state.play_folder_entry() if ctrl else state.activate()
             elif event.key in (pygame.K_BACKSPACE, pygame.K_LEFT):
                 state.go_up()
@@ -350,7 +383,8 @@ class FilePicker:
         x = self.MARGIN
 
         # Header: title, current folder, message.
-        self._text("Choose a .vm file, or a folder of .vm files", self.TITLE, (x, self.MARGIN))
+        title = "Choose a .vm or .jack file, or a folder of them" if state.can_compile else "Choose a .vm file, or a folder of .vm files"
+        self._text(title, self.TITLE, (x, self.MARGIN))
         self._text(self._fit_left(str(state.directory), width - 2 * x, self.font), self.TEXT, (x, self.MARGIN + line))
         if state.message:
             self._text(state.message, self.ERROR, (x, self.MARGIN + 2 * line), self.small)
@@ -370,13 +404,17 @@ class FilePicker:
             elif row.collidepoint(mouse):
                 pygame.draw.rect(surface, self.HOVER_ROW, row, border_radius=4)
 
-            icon = {"parent": "<- ", "folder": "[+]", "vm": " * "}[entry.kind]
-            colour = self.TEXT if entry.kind != "folder" or entry.vm_count else self.DIM
+            icon = {"parent": "<- ", "folder": "[+]", "vm": " * ", "jack": " # "}[entry.kind]
+            colour = self.TEXT if entry.kind != "folder" or entry.vm_count or entry.jack_count else self.DIM
             self._text(f"{icon} {entry.label}", colour, (row.left + 8, row.top + 4))
 
             play_rect = None
-            if entry.kind == "folder" and entry.vm_count:
+            label = ""
+            if entry.kind == "folder" and entry.jack_count:  # (only counted if we can compile)
+                label = f"[compile+play {entry.jack_count} .jack]"
+            elif entry.kind == "folder" and entry.vm_count:
                 label = f"[play {entry.vm_count} file{'s' if entry.vm_count != 1 else ''}]"
+            if label:
                 image = self.font.render(label, True, self.TITLE)
                 play_rect = image.get_rect(right=row.right - 8, top=row.top + 4)
                 surface.blit(image, play_rect)
@@ -391,12 +429,16 @@ class FilePicker:
         # Footer: help text and buttons.
         help_y = height - self.MARGIN - 44 - self.small.get_linesize() - 4
         pygame.draw.line(surface, self.DIM, (area.left, help_y - 4), (area.right, help_y - 4))
-        self._text(
-            "Click / Enter: open    Ctrl+Enter: play folder    Backspace: up    Esc: cancel",
-            self.DIM, (x, help_y), self.small,
-        )  # fmt: skip
-        count = state.current_folder_vm_count()
-        play_label = f"Play this folder ({count} file{'s' if count != 1 else ''})" if count else "Play this folder"
+        footer = "Click / Enter: open    Ctrl+Enter: play folder    Backspace: up    Esc: cancel"
+        if self.compiler_folder and self.open_in_compiler:
+            footer += "    Ctrl+J: open in compiler"
+        self._text(footer, self.DIM, (x, help_y), self.small)
+        jack_count = state.current_folder_jack_count()
+        count = jack_count or state.current_folder_vm_count()
+        if jack_count:
+            play_label = f"Compile and play ({jack_count} .jack)"
+        else:
+            play_label = f"Play this folder ({count} file{'s' if count != 1 else ''})" if count else "Play this folder"
         self._play_button = pygame.Rect(x, height - self.MARGIN - 40, max(260, self.font.size(play_label)[0] + 30), 40)
         self._cancel_button = pygame.Rect(self._play_button.right + 12, self._play_button.top, 120, 40)
         self._button(self._play_button, play_label, enabled=count > 0)

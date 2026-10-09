@@ -17,6 +17,7 @@ learning. Suggested reading order (each file builds on the previous ones):
    10. program_files.py - turns a file / folder / game name into .vm files
    11. file_picker.py - the "choose a program" window (GUI)
    12. main.py        - the command line
+   13. jack_sources.py, integrations.py - run .jack source via jack-compiler
 
 Quick use from Python:
 
@@ -26,6 +27,8 @@ Quick use from Python:
     vm.run(3)
     print(vm.peek(256))   # -> 15
 """
+
+__version__ = "0.1.0"  # keep in step with pyproject.toml
 
 from .parser import ParseError, parse_program
 from .vm import SysError, VirtualMachine, VMError

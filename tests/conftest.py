@@ -22,3 +22,8 @@ import os
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")  # skip pygame's "Hello from..." banner
+
+# Never pick up a real Jack compiler installed on this machine: tests that
+# need one pass a fake (see tests/test_jack_sources.py). "off" disables it.
+os.environ["JACKC"] = "off"
+os.environ["JACKC_GUI"] = "off"

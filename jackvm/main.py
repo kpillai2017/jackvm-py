@@ -10,6 +10,8 @@ This is the file that runs when you type:
     python -m jackvm games/hello-world/Main.vm   # a single .vm file
     python -m jackvm Main.vm Ball.vm Bat.vm   # several files at once
     python -m jackvm pong --headless --ticks 3000000   # no window
+    python -m jackvm projects/Square/         # Jack SOURCE: compiled first, if
+                                              # jack-compiler is installed
 
 Run `python -m jackvm --help` to see every option.
 
@@ -27,6 +29,8 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
 
+from . import __version__
+from .jack_sources import JackCompileError, JackTools, describe_program
 from .memory_map import REGISTER_NAMES
 from .parser import ParseError
 from .program_files import GAMES_FOLDER, describe, list_games, read_program, resolve_paths  # noqa: F401
@@ -67,7 +71,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "program", nargs="*",
-        help="a .vm file, a folder of .vm files, or a bundled game name. Leave it out to choose in a window.",
+        help="a .vm file, a folder of .vm files, or a bundled game name - or Jack source (.jack), "
+        "if jack-compiler is installed. Leave it out to choose in a window.",
     )  # fmt: skip
     parser.add_argument(
         "--gui", action="store_true",
@@ -88,6 +93,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )  # fmt: skip
     parser.add_argument("--headless", action="store_true", help="no window: run in the terminal and print the screen as text")
     parser.add_argument("--ticks", type=int, default=5_000_000, help="with --headless: how many instructions to run (default: 5,000,000)")
+    parser.add_argument("--version", action="version", version=f"jackvm {__version__}")
     return parser
 
 
@@ -125,24 +131,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     vm = VirtualMachine()
     files: List[Path] = []
+    tools = JackTools()  # the Jack compiler, if it's installed (see jack_sources.py)
 
     if use_gui_picker:
         # Imported here so --headless works even where pygame isn't installed.
         from .player import open_picker_window
 
         start = Path(args.program[0]).expanduser() if args.program else GAMES_FOLDER
-        files = open_picker_window(vm, start if start.is_dir() else GAMES_FOLDER)
+        files = open_picker_window(vm, start if start.is_dir() else GAMES_FOLDER, tools)
         if not files:
             return 0  # the user cancelled or closed the window
     else:
         try:
-            files = resolve_paths(args.program)
+            files = tools.prepare(args.program)
             vm.load_source(read_program(files))
+        except JackCompileError as problem:
+            print(problem.output.strip() or problem, file=sys.stderr)
+            if tools.gui is not None:
+                print(f"\nTo see the mistakes marked in the code:  jackc-gui {problem.folder}", file=sys.stderr)
+            return 1
         except (FileNotFoundError, ParseError) as problem:
             print(problem, file=sys.stderr)
             return 1
 
-    print(f"Loaded {describe(files)}: {len(vm.commands):,} instructions.")
+    print(f"Loaded {describe_program(files)}: {len(vm.commands):,} instructions.")
 
     if args.headless:
         return run_headless(vm, args.ticks, watch)
@@ -152,6 +164,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     Player(
         vm,
         files=files,
+        tools=tools,
         scale=args.scale,
         show_debugger=not args.no_debugger,
         ticks_per_frame=args.ticks_per_frame,
