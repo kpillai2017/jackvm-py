@@ -38,6 +38,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+          # Install the package itself too, so its "jack_tools" entry point
+          # (how jack-compiler finds this VM) is registered and tested.
+          python -m pip install -e .
+
+      - name: Fetch jack-compiler (to check the shared integrations.py matches)
+        shell: bash
+        run: |
+          # The branch with the same name as this one, if jack-compiler has it; else main.
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          dest="$RUNNER_TEMP/jack-compiler"
+          git clone --quiet --depth 1 --branch "$branch" https://github.com/kpillai2017/jack-compiler.git "$dest" 2>/dev/null \
+            || git clone --quiet --depth 1 https://github.com/kpillai2017/jack-compiler.git "$dest"
+          echo "JACK_TOOLS_COMPANION=$dest" >> "$GITHUB_ENV"
+          echo "Comparing with jack-compiler @ $(git -C "$dest" rev-parse --abbrev-ref HEAD) $(git -C "$dest" rev-parse --short HEAD)"
 
       - name: Run the tests
         run: python -m pytest -v

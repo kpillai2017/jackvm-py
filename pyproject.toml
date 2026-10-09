@@ -41,6 +41,12 @@ test = ["pytest>=8"]
 [project.scripts]
 jackvm = "jackvm.main:main"
 
+# Lets jack-compiler (https://github.com/kpillai2017/jack-compiler) find this VM
+# when both are installed in the same Python environment, so its window can
+# run programs here (Ctrl+J). See jackvm/integrations.py.
+[project.entry-points.jack_tools]
+vm = "jackvm.main:main"
+
 [build-system]
 requires = ["setuptools>=77"]  # 77+ understands `license = "MIT"`
 build-backend = "setuptools.build_meta"

@@ -28,6 +28,10 @@ Window layout
 The right-hand column is the debugger (Ctrl+D hides it). The shortcuts box
 always stays under the game, so you can always see how to pause or quit.
 
+If the Jack compiler (https://github.com/kpillai2017/jack-compiler) is
+installed, Ctrl+J opens the program's .jack sources in the compiler's
+window (jackc-gui) - see jack_sources.py.
+
 The main loop
 -------------
 Games are animated by repeating these steps about 60 times per second
@@ -67,6 +71,7 @@ import pygame
 
 from .debugger import DebuggerPanel, build_sections, largest_sections
 from .file_picker import PLAY, QUIT, FilePicker
+from .jack_sources import JackCompileError, JackTools, describe_program, source_folder_for
 from .keyboard import Keyboard
 from .memory_map import SCREEN_HEIGHT, SCREEN_WIDTH
 from .parser import ParseError
@@ -80,6 +85,7 @@ CHUNK = 2_000  # instructions to run between clock checks
 
 ESC_HOLD_SECONDS = 1.0  # hold Esc this long to quit
 ESC_SHOW_BAR_AFTER = 0.25  # ...and show the "keep holding" bar after this long
+NOTICE_SECONDS = 5.0  # how long a message such as "Opened in the compiler" shows
 
 # Layout (pixels) and colours of the window decoration.
 MARGIN = 16  # empty space around the screen and the panel
@@ -102,9 +108,13 @@ class Player:
         on_colour: Colour = DEFAULT_ON_COLOUR,
         off_colour: Colour = DEFAULT_OFF_COLOUR,
         watch: Sequence[int] = (),
+        tools: Optional[JackTools] = None,
     ) -> None:
         self.vm = vm
         self.files = list(files)  # the .vm files that were loaded (for the title)
+        self.tools = tools if tools is not None else JackTools()  # the Jack compiler, if installed
+        self.source_folder = source_folder_for(self.files)  # where the .jack sources are (Ctrl+J)
+        self._notice: Optional[Tuple[str, float]] = None  # (text, shown until)
         self.scale = max(1, scale)
         self.show_debugger = show_debugger
         self.ticks_per_frame = ticks_per_frame
@@ -147,7 +157,8 @@ class Player:
         """
         # The shortcuts box lines up with the outside edges of the screen's frame.
         frame = self.screen_rect.inflate(2 * FRAME_EXTENT, 2 * FRAME_EXTENT)
-        self.shortcuts = self.panel.shortcuts_section(frame.width)
+        compiler = "Ctrl+J open in compiler" if self.tools.gui is not None else "Ctrl+J compiler (not installed)"
+        self.shortcuts = self.panel.shortcuts_section(frame.width, [compiler])
         self.shortcuts_rect = pygame.Rect(
             frame.left, frame.bottom + DebuggerPanel.GAP + 4,
             frame.width, self.panel.box_height(self.shortcuts.row_count),
@@ -164,7 +175,7 @@ class Player:
         self.window = pygame.display.set_mode((width, height))
 
     def _title(self) -> str:
-        return f"JackVM (Python) - {describe(self.files)}" if self.files else "JackVM (Python)"
+        return f"JackVM (Python) - {describe_program(self.files)}" if self.files else "JackVM (Python)"
 
     # ------------------------------------------------------------------
     # The main loop
@@ -242,9 +253,22 @@ class Player:
         elif key == pygame.K_d:
             self.show_debugger = not self.show_debugger
             self._resize_window()
+        elif key == pygame.K_j:
+            self.open_in_compiler()
         elif key == pygame.K_o:
             return self._open_another_program()
         return True
+
+    def open_in_compiler(self) -> str:
+        """Ctrl+J: open this program's .jack sources in the Jack compiler's window."""
+        message = self.tools.open_in_compiler(self.source_folder)
+        self.notify(message)
+        return message
+
+    def notify(self, text: str) -> None:
+        """Show a short message over the bottom of the game screen for a few seconds."""
+        print(text)
+        self._notice = (text, self.now() + NOTICE_SECONDS)
 
     def _open_another_program(self) -> bool:
         """
@@ -262,9 +286,10 @@ class Player:
         if width < 800 or height < 560:
             self.window = pygame.display.set_mode((max(width, 800), max(height, 560)))
 
-        outcome, files = choose_program(self.window, self.vm, start)
+        outcome, files = choose_program(self.window, self.vm, start, self.tools)
         if outcome == PLAY:
             self.files = files
+            self.source_folder = source_folder_for(files)
             self.error = ""
             self.paused = False
             pygame.display.set_caption(self._title())
@@ -321,6 +346,8 @@ class Player:
         progress = self.esc_hold_progress()
         if self._esc_pressed_at is not None and progress * ESC_HOLD_SECONDS >= ESC_SHOW_BAR_AFTER:
             self._draw_banner("Keep holding Esc to quit...", progress)
+        elif self._notice is not None and self.now() < self._notice[1]:
+            self._draw_banner(self._notice[0], None)
         elif self.program_finished():
             self._draw_banner("Program finished - press Esc to quit", None)
 
@@ -328,7 +355,10 @@ class Player:
         """A dark, see-through box over the bottom of the game screen."""
         font = self.panel.font
         height = 44 if progress is not None else 28
-        box = pygame.Rect(0, 0, min(380, self.screen_rect.width - 20), height)
+        widest = self.screen_rect.width - 20
+        while len(text) > 4 and font.size(text)[0] + 24 > widest:
+            text = text[:-4] + "..."  # too long for the box: cut it short
+        box = pygame.Rect(0, 0, min(widest, max(380, font.size(text)[0] + 24)), height)
         box.midbottom = (self.screen_rect.centerx, self.screen_rect.bottom - 10)
 
         overlay = pygame.Surface(box.size, pygame.SRCALPHA)  # SRCALPHA = allows see-through
@@ -366,36 +396,57 @@ class Player:
 # ---------------------------------------------------------------------------
 # Choosing a program with the GUI file picker
 # ---------------------------------------------------------------------------
-def choose_program(surface, vm: VirtualMachine, start_directory: Path) -> Tuple[str, Optional[List[Path]]]:
+def choose_program(
+    surface, vm: VirtualMachine, start_directory: Path, tools: Optional[JackTools] = None
+) -> Tuple[str, Optional[List[Path]]]:
     """
     Show the file picker on `surface` until the user picks a program that
     loads without errors (or gives up).
 
     If the chosen files contain a mistake, the picker opens again with the
     problem shown at the top, so the user can choose something else.
-    The VM is only changed when loading succeeds.
+    The VM is only changed when loading succeeds. Jack source (.jack) is
+    compiled first, if the Jack compiler is installed; if it has mistakes,
+    Ctrl+J in the picker opens it in the compiler's window.
 
     Returns (outcome, files) - outcome is "play", "cancel" or "quit".
     """
+    tools = tools if tools is not None else JackTools()
     message = ""
+    failed_folder: Optional[Path] = None  # Jack source that didn't compile
     while True:
-        outcome, files = FilePicker(surface, start_directory, message).run()
-        if outcome != PLAY or not files:
+        picker = FilePicker(
+            surface, start_directory, message, tools.can_compile,
+            failed_folder if tools.gui is not None else None, tools.open_in_compiler,
+        )  # fmt: skip
+        outcome, picked = picker.run()
+        if outcome != PLAY or not picked:
             return outcome, None
+        files = picked
+        failed_folder = None
         try:
+            files = tools.prepare([str(p) for p in picked])
             vm.load_source(read_program(files))
             return PLAY, files
+        except JackCompileError as problem:
+            failed_folder = problem.folder
+            hint = " - Ctrl+J: open in compiler" if tools.gui is not None else ""
+            message = f"Can't compile {problem.folder.name}/: {problem}{hint}"
+        except FileNotFoundError as problem:
+            message = str(problem)
         except ParseError as problem:
             first = problem.problems[0]
             more = f" (+{len(problem.problems) - 1} more)" if len(problem.problems) > 1 else ""
-            message = f"Can't load {describe(files)}: {first.message} on line {first.line_number}{more}"
+            message = f"Can't load {describe_program(files)}: {first.message} on line {first.line_number}{more}"
         except (OSError, UnicodeDecodeError) as problem:
-            message = f"Can't read {describe(files)}: {problem}"
+            message = f"Can't read {describe_program(files)}: {problem}"
         print(message)
-        start_directory = files[0].parent  # reopen where the user was
+        start_directory = picked[0] if picked[0].is_dir() else picked[0].parent  # reopen where the user was
 
 
-def open_picker_window(vm: VirtualMachine, start_directory: Path = GAMES_FOLDER) -> Optional[List[Path]]:
+def open_picker_window(
+    vm: VirtualMachine, start_directory: Path = GAMES_FOLDER, tools: Optional[JackTools] = None
+) -> Optional[List[Path]]:
     """
     Used when jackvm is started without a program: open a window just for
     the picker. Returns the loaded files, or None if the user gave up.
@@ -404,7 +455,7 @@ def open_picker_window(vm: VirtualMachine, start_directory: Path = GAMES_FOLDER)
     pygame.init()
     pygame.display.set_caption("JackVM (Python) - choose a program")
     surface = pygame.display.set_mode((900, 620))
-    outcome, files = choose_program(surface, vm, start_directory)
+    outcome, files = choose_program(surface, vm, start_directory, tools)
     if outcome != PLAY:
         pygame.quit()
         return None
