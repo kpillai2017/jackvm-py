@@ -291,6 +291,13 @@ Each app finds the other like this (the first match wins; see
    with that environment's Python) or the full path of the command. The file
    follows `XDG_CONFIG_HOME`, and `JACK_TOOLS_CONFIG=/some/file.ini` points
    to a different one.
+
+   [`config.example.ini`](config.example.ini) is a commented template with
+   every setting. Copy it into place and uncomment the lines you need:
+
+   ```bash
+   mkdir -p ~/.config/jack-tools && cp config.example.ini ~/.config/jack-tools/config.ini
+   ```
 3. **The same Python environment**: both packages register themselves in
    the `jack_tools` entry-point group, so `pip install -e` is enough.
 4. **The `PATH`**: a `jackc` / `jackc-gui` command installed anywhere else.
@@ -337,6 +344,7 @@ jackvm-py/
 ├── .github/workflows/ GitHub runs the tests on every push (tests.yml)
 ├── LEARNING_GUIDE.md  a guided tour with exercises
 ├── requirements.txt   libraries to install
+├── config.example.ini template for ~/.config/jack-tools/config.ini (finding jack-compiler)
 ├── pyproject.toml     project + pytest settings
 └── LICENSE            MIT (keeps the original jackvm-rs copyright notice)
 ```

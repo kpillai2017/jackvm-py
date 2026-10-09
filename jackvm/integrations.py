@@ -184,11 +184,20 @@ def config_path(environ: Optional[Mapping[str, str]] = None) -> Optional[Path]:
     return Path(base) / "jack-tools" / "config.ini" if base else None
 
 
+def _config_parser() -> configparser.ConfigParser:
+    """
+    How the config file is read: no %-interpolation, and a comment may end a
+    line ("jackvm = ~/code/jackvm-py   ; my checkout") when its ; or # comes
+    after a space - so a # inside a path, as in ~/c#/jackvm-py, still works.
+    """
+    return configparser.ConfigParser(interpolation=None, inline_comment_prefixes=("#", ";"))
+
+
 def read_config(path: Optional[Path]) -> Dict[str, str]:
     """The [apps] section of the config file, e.g. {"jackvm": "~/jackvm-py"}; {} if there is none."""
     if path is None or not path.is_file():
         return {}
-    parser = configparser.ConfigParser(interpolation=None)
+    parser = _config_parser()
     try:
         parser.read(path, encoding="utf-8")
     except (configparser.Error, OSError, UnicodeDecodeError):
@@ -276,6 +285,12 @@ def can_configure(app: App, environ: Optional[Mapping[str, str]] = None) -> bool
     return path is not None and read_config(path).get(app.executable, "").lower() not in OFF_VALUES
 
 
+NEW_CONFIG_HEADER = (
+    "# jack-tools config: how jack-compiler and jackvm-py find each other.",
+    "# Every setting is explained in config.example.ini, in either repository.",
+)
+
+
 def save_setting(key: str, value: str, environ: Optional[Mapping[str, str]] = None) -> Path:
     """
     Set `key = value` in the [apps] section of the config file, creating the
@@ -287,9 +302,9 @@ def save_setting(key: str, value: str, environ: Optional[Mapping[str, str]] = No
     if path is None:
         raise OSError("there's no home folder to keep the config file in")
     try:
-        lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+        lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else list(NEW_CONFIG_HEADER)
     except UnicodeDecodeError:
-        lines = []
+        lines = list(NEW_CONFIG_HEADER)
     new_line = f"{key} = {value}"
     section, header, done = "", None, False
     for index, line in enumerate(lines):
@@ -429,7 +444,7 @@ def _short_path(path: Path, environ: Mapping[str, str]) -> str:
 
 def _unreadable(path: Path) -> bool:
     try:
-        configparser.ConfigParser(interpolation=None).read(path, encoding="utf-8")
+        _config_parser().read(path, encoding="utf-8")
         return False
     except (configparser.Error, OSError, UnicodeDecodeError):
         return True
