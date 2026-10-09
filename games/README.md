@@ -20,7 +20,7 @@ python3 -m jackvm          # file picker: click [play 4 files] next to pong/
 
 | Name | What it is | Controls | Files |
 |------|------------|----------|-------|
-| `pong` | Single-player Pong. Keep the ball in play with the bat. | ← → move the bat, Esc ends the game (hold Esc 1 s to close the player) | 4 |
+| `pong` | Single-player Pong. Keep the ball in play with the bat. | ← → move the bat, Esc ends the game (hold Esc 1 s to go back to the picker) | 4 |
 | `space-invaders` | A Space Invaders clone. | Space starts / shoots, ← → move | 12 |
 | `square-game` | Move a square around the screen. | Arrow keys move, Z = smaller, X = bigger, Q = quit | 3 |
 | `average` | Asks for some numbers and prints their average. | Type numbers, press Enter after each | 9 |

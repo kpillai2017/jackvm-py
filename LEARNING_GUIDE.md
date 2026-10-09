@@ -222,9 +222,9 @@ function's static base address (`vm.call_stack[-1][1]`).
 **Notice:** it's the same loop as nearly every video game: handle input,
 update, draw, wait.
 
-**Notice** how quitting with Esc works (`_handle_events`, `esc_hold_progress`).
-Pong uses Esc itself, so the player can't just quit when it sees one. It
-records *when* Esc went down and quits only if the key is still held one
+**Notice** how going back with Esc works (`_handle_events`, `esc_hold_progress`).
+Pong uses Esc itself, so the player can't just leave when it sees one. It
+records *when* Esc went down and goes back to the file picker only if the key is still held one
 second later. Tests can't wait a real second, so the clock is an attribute
 (`self.now`) that `tests/test_player.py` swaps for a fake one it moves forward
 by hand. That trick is called *dependency injection*.

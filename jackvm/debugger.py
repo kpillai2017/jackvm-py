@@ -73,7 +73,7 @@ HELP_ITEMS = [
     "Ctrl+D debugger",
     "Ctrl+O open program",
     "Ctrl+Q quit",
-    "Hold Esc 1 s: quit",
+    "Hold Esc 1 s: back to picker",
 ]
 HELP_SEPARATOR = "   "
 
@@ -103,7 +103,7 @@ def build_sections(vm, status: str, ticks_per_second: float, watch: Sequence[int
     box.add(f"speed  {ticks_per_second / 1e6:5.2f} M instructions/s", "dim")
     box.add(f"ticks  {vm.ticks:,}", "dim")
     if status in ("HALTED", "ERROR"):
-        box.add("Program finished: press Esc to quit", "dim")
+        box.add("Program finished: Esc to go back", "dim")
     sections.append(box)
 
     if error:

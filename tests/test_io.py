@@ -135,12 +135,12 @@ def test_call_stack_box_keeps_a_fixed_height():
     assert call_stack.row_count == CALL_STACK_ROWS + 1  # ...but space is reserved
 
 
-def test_debugger_shows_errors_and_how_to_quit():
+def test_debugger_shows_errors_and_how_to_go_back():
     vm = VirtualMachine()
     sections = build_sections(vm, "ERROR", 0, error="Stack underflow")
     assert sections[1].title == "ERROR"
     assert ("Stack underflow", "error") in sections[1].rows
-    assert ["Program", "finished:", "press", "Esc", "to", "quit"] in section_rows(sections)["STATUS"]
+    assert ["Program", "finished:", "Esc", "to", "go", "back"] in section_rows(sections)["STATUS"]
 
 
 def test_error_messages_wrap_between_words_and_are_capped():

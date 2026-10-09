@@ -100,7 +100,7 @@ Choose a .vm file, or a folder of .vm files
  [+] pong/                                      [play 4 files]
  [+] space-invaders/                           [play 12 files]
  ...
- [ Play this folder ]  [ Cancel ]
+ [ Play this folder ]  [ Quit ]
 ```
 
 You can play **either** of these:
@@ -118,7 +118,8 @@ You can play **either** of these:
 | `[play N files]`, or Ctrl+Enter | play all `.vm` files in that folder |
 | Backspace or ← | go up to the parent folder |
 | ↑ ↓ PgUp PgDn, mouse wheel | move through the list |
-| Esc / Cancel | close the picker |
+| Esc / Quit | quit. When you came here from a program (Esc or Ctrl+O), the button reads **Back**, and Esc returns to that program |
+| Ctrl+Q | quit |
 
 If the files you choose contain a mistake, the picker stays open and shows
 the problem (with its line number) in red at the top.
@@ -153,20 +154,23 @@ Hold **Ctrl** (or **Cmd ⌘** on a Mac) so the game doesn't receive the key:
 | Ctrl+D | show / hide the debugger panel |
 | Ctrl+O | open another program (the file picker) |
 | Ctrl+J | open the program's `.jack` sources in [jack-compiler](https://github.com/kpillai2017/jack-compiler)'s window, if it's installed |
+| **Hold** Esc for 1 s | go back to the file picker (a bar shows the countdown; let go to cancel) |
+| Esc, once the program has finished | go back to the file picker straight away |
 | Ctrl+Q | quit (closing the window works too) |
-| **Hold** Esc for 1 s | quit (a bar shows the countdown; let go to cancel) |
-| Esc, once the program has finished | quit straight away |
+
+In the file picker you can choose another program, or press Esc (or
+**Back**) to return to the one you were playing.
 
 #### Why do I have to *hold* Esc?
 
 Some games use Esc themselves. Pong, for example, ends the game when you
 press it. So while a program is running, Esc always goes to the game, and a
-quick tap never quits the player. If you keep holding it, a "Keep holding
-Esc to quit..." bar fills up over one second and then the player closes.
+quick tap never leaves it. If you keep holding it, a "Keep holding Esc to go
+back..." bar fills up over one second and then the file picker opens.
 
 Once the program has **finished** (status HALTED) or **crashed** (status
 ERROR), the game can't read the keyboard any more. Then a single Esc press
-quits, and a banner on the screen tells you so.
+goes back, and a banner on the screen tells you so.
 
 ### Useful options
 
@@ -269,12 +273,29 @@ Each app finds the other like this (the first match wins; see
 1. **An environment variable**: `JACKC` / `JACKC_GUI` (and `JACKVM` for the
    other direction), e.g. `JACKC="/path/to/jack-compiler/.venv/bin/jackc"`.
    Set it to `off` to switch the integration off.
-2. **The same Python environment**: both packages register themselves in
+2. **The config file** shared by both apps, so they find each other from any
+   folder and any environment:
+
+   ```ini
+   # ~/.config/jack-tools/config.ini   (Windows: %APPDATA%\jack-tools\config.ini)
+   [apps]
+   jackc = ~/code/jack-compiler       ; a folder: its bin/, .venv, venv, env or .direnv/* is searched
+   jackvm = ~/code/jackvm-py          ; for the compiler's Ctrl+J
+   # jackc-gui = /full/path/to/jackc-gui   ; or give a command (found next to jackc otherwise)
+   # jackc = off                           ; switch it off
+   ```
+
+   A value is either the project's folder (the app must be installed in a
+   virtual environment inside it) or the full path of the command. The file
+   follows `XDG_CONFIG_HOME`, and `JACK_TOOLS_CONFIG=/some/file.ini` points
+   to a different one.
+3. **The same Python environment**: both packages register themselves in
    the `jack_tools` entry-point group, so `pip install -e` is enough.
-3. **The `PATH`**: a `jackc` / `jackc-gui` command installed anywhere else.
+4. **The `PATH`**: a `jackc` / `jackc-gui` command installed anywhere else.
 
 Without the compiler, everything works as before, and the shortcuts box
-shows `Ctrl+J compiler (not installed)`. The two apps only run each other's
+shows `Ctrl+J compiler (not installed)`; pressing it (or choosing a `.jack`
+folder) says what to put in the config file. The two apps only run each other's
 commands and never import each other's code.
 
 ---

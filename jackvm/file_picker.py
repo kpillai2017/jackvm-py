@@ -33,7 +33,7 @@ What it looks like:
      [+] pong/                                  [play 4 files]
      [+] space-invaders/                       [play 12 files]
     -----------------------------------------------------------
-     [ Play this folder ]   [ Cancel ]
+     [ Play this folder ]   [ Quit ]   ("Back" when opened from a program)
 
 Why not a "native" Open dialog?
 -------------------------------
@@ -63,7 +63,7 @@ from .jack_sources import jack_files_in
 
 # What the picker can end with:
 PLAY = "play"  # the user chose something to run
-CANCEL = "cancel"  # the user pressed Esc / Cancel
+CANCEL = "cancel"  # the user pressed Esc / Back / Quit (the caller decides which it means)
 QUIT = "quit"  # the user closed the window
 
 
@@ -238,11 +238,16 @@ class FilePicker:
         can_compile: bool = False,
         compiler_folder: Optional[Path] = None,
         open_in_compiler=None,
+        back_to: str = "",
     ) -> None:
         import pygame  # imported here so the logic above works without pygame
 
         self.pygame = pygame
         self.surface = surface
+        # Esc / the second button: back to the program that was open (e.g.
+        # "Pong"), or, in the first picker, there's nothing to go back to - so it quits.
+        self.back_to = back_to
+        self._esc_needs_release = False  # see run()
         self.state = PickerState(start_directory, can_compile)
         self.state.message = message
         # After a failed compile: the folder Ctrl+J opens in the compiler, and
@@ -267,6 +272,8 @@ class FilePicker:
         pygame = self.pygame
         clock = pygame.time.Clock()
         pygame.key.set_repeat(300, 40)  # hold an arrow key to keep moving
+        # Opened by HOLDING Esc? Then its key-repeat isn't a request to go back.
+        self._esc_needs_release = bool(pygame.key.get_pressed()[pygame.K_ESCAPE])
         try:
             while True:
                 for event in pygame.event.get():
@@ -290,9 +297,12 @@ class FilePicker:
         if event.type == pygame.KEYDOWN:
             ctrl = event.mod & (pygame.KMOD_CTRL | pygame.KMOD_META)
             if event.key == pygame.K_ESCAPE:
-                return CANCEL, None
+                return None if self._esc_needs_release else (CANCEL, None)
+            if ctrl and event.key == pygame.K_q:
+                return QUIT, None
             if ctrl and event.key == pygame.K_j and self.compiler_folder and self.open_in_compiler:
                 state.message = self.open_in_compiler(self.compiler_folder)
+                print(state.message)
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 files = state.play_folder_entry() if ctrl else state.activate()
             elif event.key in (pygame.K_BACKSPACE, pygame.K_LEFT):
@@ -312,6 +322,9 @@ class FilePicker:
                 state.move(-len(state.entries))
             elif event.key == pygame.K_END:
                 state.move(+len(state.entries))
+
+        elif event.type == pygame.KEYUP and event.key == pygame.K_ESCAPE:
+            self._esc_needs_release = False
 
         elif event.type == pygame.MOUSEWHEEL:
             self.scroll = max(0, self.scroll - event.y * 3)
@@ -386,8 +399,8 @@ class FilePicker:
         title = "Choose a .vm or .jack file, or a folder of them" if state.can_compile else "Choose a .vm file, or a folder of .vm files"
         self._text(title, self.TITLE, (x, self.MARGIN))
         self._text(self._fit_left(str(state.directory), width - 2 * x, self.font), self.TEXT, (x, self.MARGIN + line))
-        if state.message:
-            self._text(state.message, self.ERROR, (x, self.MARGIN + 2 * line), self.small)
+        if state.message:  # (one line fits: the rest is printed in the terminal)
+            self._text(state.message.split("\n")[0], self.ERROR, (x, self.MARGIN + 2 * line), self.small)
 
         # The list of entries (only the rows that fit).
         area = self._list_area()
@@ -429,10 +442,7 @@ class FilePicker:
         # Footer: help text and buttons.
         help_y = height - self.MARGIN - 44 - self.small.get_linesize() - 4
         pygame.draw.line(surface, self.DIM, (area.left, help_y - 4), (area.right, help_y - 4))
-        footer = "Click / Enter: open    Ctrl+Enter: play folder    Backspace: up    Esc: cancel"
-        if self.compiler_folder and self.open_in_compiler:
-            footer += "    Ctrl+J: open in compiler"
-        self._text(footer, self.DIM, (x, help_y), self.small)
+        self._text(self._footer(width - 2 * x), self.DIM, (x, help_y), self.small)
         jack_count = state.current_folder_jack_count()
         count = jack_count or state.current_folder_vm_count()
         if jack_count:
@@ -442,4 +452,19 @@ class FilePicker:
         self._play_button = pygame.Rect(x, height - self.MARGIN - 40, max(260, self.font.size(play_label)[0] + 30), 40)
         self._cancel_button = pygame.Rect(self._play_button.right + 12, self._play_button.top, 120, 40)
         self._button(self._play_button, play_label, enabled=count > 0)
-        self._button(self._cancel_button, "Cancel", enabled=True)
+        self._button(self._cancel_button, "Back" if self.back_to else "Quit", enabled=True)
+
+    def _footer(self, width: int) -> str:
+        """The key help, without its least important hints if it's too wide for `width`."""
+        back_to = self.back_to if len(self.back_to) <= 20 else self.back_to[:19] + "…"
+        parts = [
+            "Enter: open", "Ctrl+Enter: play folder", "Backspace: up",
+            f"Esc: back to {back_to}" if self.back_to else "Esc: quit", "Ctrl+Q: quit",
+        ]  # fmt: skip
+        if self.compiler_folder and self.open_in_compiler:
+            parts.append("Ctrl+J: open in compiler")
+        for drop in ("Backspace: up", "Enter: open", "Ctrl+Enter: play folder"):
+            if self.small.size("   ".join(parts))[0] <= width:
+                break
+            parts.remove(drop)
+        return "   ".join(parts)

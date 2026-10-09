@@ -61,7 +61,7 @@ def esc_up():
 
 
 # --- Esc while the program is running -----------------------------------------
-def test_a_quick_esc_tap_goes_to_the_game_and_does_not_quit(player):
+def test_a_quick_esc_tap_goes_to_the_game_and_does_not_go_back(player):
     assert send(player, esc_down()) is True
     assert player.vm.peek(KEYBOARD) == 140  # the game sees Esc (Hack code 140)
     player.now.t += 0.2
@@ -71,7 +71,7 @@ def test_a_quick_esc_tap_goes_to_the_game_and_does_not_quit(player):
     assert not player._esc_held_long_enough()
 
 
-def test_holding_esc_for_one_second_quits(player):
+def test_holding_esc_for_one_second_goes_back(player):
     send(player, esc_down())
     player.now.t += ESC_HOLD_SECONDS / 2
     assert player.esc_hold_progress() == pytest.approx(0.5)
@@ -108,16 +108,46 @@ def test_the_bar_is_drawn_while_holding(player):
 
 
 # --- Esc once the program has finished ------------------------------------------
-def test_one_esc_press_quits_when_the_program_has_halted(player):
+def fake_picker(monkeypatch, *outcomes):
+    """Replace the picker: each time it's opened, it 'returns' the next outcome."""
+    import jackvm.player as player_module
+
+    calls = []
+
+    def choose_program(*args, **kwargs):
+        calls.append(kwargs)
+        return outcomes[len(calls) - 1]
+
+    monkeypatch.setattr(player_module, "choose_program", choose_program)
+    return calls
+
+
+def test_one_esc_press_goes_back_when_the_program_has_halted(player, monkeypatch):
+    calls = fake_picker(monkeypatch, ("cancel", None), ("quit", None))
     player.vm.load_source("function Sys.init 0\ncall Sys.halt 0\n")
     player.vm.run(10)
     assert player.vm.is_halted()
-    assert send(player, esc_down()) is False  # quit immediately
+    assert send(player, esc_down()) is True  # the picker, then Esc there: back here
+    assert len(calls) == 1 and calls[0]["back_to"]
+    send(player, esc_up())
+    assert send(player, esc_down()) is False  # the picker, then Ctrl+Q there: quit
 
 
-def test_one_esc_press_quits_after_a_runtime_error(player):
+def test_one_esc_press_goes_back_after_a_runtime_error(player, monkeypatch):
+    calls = fake_picker(monkeypatch, ("quit", None))
     player.error = "Stack underflow"
-    assert send(player, esc_down()) is False
+    assert send(player, esc_down()) is False and len(calls) == 1
+
+
+def test_after_going_back_a_still_held_esc_is_ignored(player, monkeypatch):
+    calls = fake_picker(monkeypatch, ("cancel", None), ("cancel", None))
+    player.error = "Stack underflow"
+    send(player, esc_down())
+    player._esc_needs_release = True  # (what go_back sets if Esc is still down)
+    assert send(player, esc_down()) is True and len(calls) == 1  # key-repeat: ignored
+    send(player, esc_up())
+    send(player, esc_down())
+    assert len(calls) == 2  # a fresh press goes back again
 
 
 def test_ctrl_q_still_quits_and_other_keys_dont(player):
