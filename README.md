@@ -9,10 +9,17 @@ It runs the `.vm` programs you produce in the
 Systems*): Pong, Space Invaders, your own Jack games. It shows them in a
 desktop window and has a **live memory debugger** beside it.
 
-🛠️ **Companion project:** [jack-compiler](https://github.com/kpillai2017/jack-compiler)
-compiles Jack to VM code with compiler-style error messages. Install both, and
-jackvm runs `.jack` source directly. See
-[Running Jack source directly](#running-jack-source-directly-with-jack-compiler).
+🛠️ **Companion projects:**
+
+* [jack-compiler](https://github.com/kpillai2017/jack-compiler) compiles Jack
+  to VM code with compiler-style error messages. Install both, and jackvm runs
+  `.jack` source directly. See
+  [Running Jack source directly](#running-jack-source-directly-with-jack-compiler).
+* [jack-decompiler](https://github.com/kpillai2017/jack-decompiler)
+  ([latest release](https://github.com/kpillai2017/jack-decompiler/releases/latest))
+  goes the other way: it turns `.vm` files back into readable Jack. Install it,
+  and **Ctrl+U** opens the program you're running in its window. See
+  [Decompiling VM code](#decompiling-vm-code-with-jack-decompiler).
 
 ```
 ╔══════════════════════════════════════════╗  ┌─ STATUS ─────────────┐
@@ -316,8 +323,19 @@ The two apps only run each other's commands and never import each other's code.
 
 [jack-decompiler](https://github.com/kpillai2017/jack-decompiler) turns `.vm`
 files back into readable Jack source. When it's installed, **Ctrl+U**
-("un-compile") opens the running program in its window. It's found the same
-four ways as the compiler (`jackvm/decompiler_link.py`):
+("un-compile") opens the running program in its window.
+
+Install it into the same environment as jackvm, and it's found automatically:
+
+```bash
+# the released package (see all releases: https://github.com/kpillai2017/jack-decompiler/releases)
+pip install https://github.com/kpillai2017/jack-decompiler/releases/download/v0.1.0/jack_decompiler-0.1.0-py3-none-any.whl
+# or a checkout you can change, next to jackvm-py
+git clone https://github.com/kpillai2017/jack-decompiler.git
+pip install -e ./jack-decompiler
+```
+
+It's found the same four ways as the compiler (`jackvm/decompiler_link.py`):
 
 1. `JACKDECOMP="python3 -m jack_decompiler"` (or `JACKDECOMP=off`)
 2. `jackdecomp = ~/code/jack-decompiler` under `[apps]` in the config file
