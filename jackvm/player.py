@@ -30,7 +30,9 @@ always stays under the game, so you can always see how to pause or quit.
 
 If the Jack compiler (https://github.com/kpillai2017/jack-compiler) is
 installed, Ctrl+J opens the program's .jack sources in the compiler's
-window (jackc-gui) - see jack_sources.py.
+window (jackc-gui) - see jack_sources.py. If jack-decompiler is installed,
+Ctrl+U opens the program's .vm files in the decompiler's window, which
+shows them as Jack source - see decompiler_link.py.
 
 The main loop
 -------------
@@ -74,7 +76,8 @@ from typing import List, Optional, Sequence, Tuple
 import pygame
 
 from .debugger import DebuggerPanel, build_sections, largest_sections
-from .file_picker import FIND_COMPILER, PLAY, QUIT, FilePicker
+from .decompiler_link import Decompiler
+from .file_picker import FIND_COMPILER, FIND_DECOMPILER, PLAY, QUIT, FilePicker
 from .jack_sources import JackCompileError, JackTools, describe_program, source_folder_for
 from .locate_app import QUIT as LOCATE_QUIT
 from .keyboard import Keyboard
@@ -114,11 +117,13 @@ class Player:
         off_colour: Colour = DEFAULT_OFF_COLOUR,
         watch: Sequence[int] = (),
         tools: Optional[JackTools] = None,
+        decompiler: Optional[Decompiler] = None,
     ) -> None:
         self.vm = vm
         self.files = list(files)  # the .vm files that were loaded (for the title)
         self.tools = tools if tools is not None else JackTools()  # the Jack compiler, if installed
         self.source_folder = source_folder_for(self.files)  # where the .jack sources are (Ctrl+J)
+        self.decompiler = decompiler if decompiler is not None else Decompiler()  # jack-decompiler, if installed (Ctrl+U)
         self._notice: Optional[Tuple[str, float]] = None  # (text, shown until)
         self.scale = max(1, scale)
         self.show_debugger = show_debugger
@@ -167,7 +172,7 @@ class Player:
             compiler = "Ctrl+J open in compiler"
         else:
             compiler = "Ctrl+J find compiler..." if self.tools.can_locate() else "Ctrl+J compiler (not installed)"
-        self.shortcuts = self.panel.shortcuts_section(frame.width, [compiler])
+        self.shortcuts = self.panel.shortcuts_section(frame.width, [compiler, self.decompiler.shortcut_label()])
         self.shortcuts_rect = pygame.Rect(
             frame.left, frame.bottom + DebuggerPanel.GAP + 4,
             frame.width, self.panel.box_height(self.shortcuts.row_count),
@@ -275,6 +280,10 @@ class Player:
             if self.tools.gui is None and self.tools.can_locate():
                 return self.find_compiler()  # (then opens the sources, if found)
             self.open_in_compiler()
+        elif key == pygame.K_u:
+            if self.decompiler.app is None and self.decompiler.can_locate():
+                return self.find_decompiler()  # (then opens the program, if found)
+            self.open_in_decompiler()
         elif key == pygame.K_o:
             return self._open_another_program()
         return True
@@ -308,6 +317,35 @@ class Player:
                 self.open_in_compiler()
         return True
 
+    def open_in_decompiler(self) -> str:
+        """Ctrl+U: open this program's .vm files in the Jack decompiler's window."""
+        message = self.decompiler.open(self.files)
+        self.notify(message)
+        return message
+
+    def find_decompiler(self) -> bool:
+        """
+        Ctrl+U when the decompiler isn't found: ask where it is (saved in the
+        config file), then open this program in it. Returns False if the
+        user quit from the chooser (Ctrl+Q / closed the window).
+        """
+        self.keyboard.release_all()
+        self._esc_pressed_at = None
+        width, height = self.window.get_size()
+        if width < 800 or height < 560:
+            self.window = pygame.display.set_mode((max(width, 800), max(height, 560)))
+        outcome, message = self.decompiler.locate(self.window)
+        self._esc_needs_release = bool(pygame.key.get_pressed()[pygame.K_ESCAPE])
+        self.keyboard.release_all()  # keys pressed in the chooser aren't the game's
+        if outcome == LOCATE_QUIT:
+            return False
+        self._resize_window()
+        if self.decompiler.app is not None:
+            self.notify(message)
+            if self.files:
+                self.open_in_decompiler()
+        return True
+
     def notify(self, text: str) -> None:
         """
         Show a short message over the bottom of the game screen for a few
@@ -337,7 +375,8 @@ class Player:
         if width < 800 or height < 560:
             self.window = pygame.display.set_mode((max(width, 800), max(height, 560)))
 
-        outcome, files = choose_program(self.window, self.vm, start, self.tools, back_to=describe_program(self.files) if self.files else "the program")
+        back_to = describe_program(self.files) if self.files else "the program"
+        outcome, files = choose_program(self.window, self.vm, start, self.tools, back_to=back_to, decompiler=self.decompiler)
         # If Esc is still down (it was held to get here), its key-repeat must
         # not send us straight back to the picker: wait until it's let go.
         self._esc_needs_release = bool(pygame.key.get_pressed()[pygame.K_ESCAPE])
@@ -452,7 +491,12 @@ class Player:
 # Choosing a program with the GUI file picker
 # ---------------------------------------------------------------------------
 def choose_program(
-    surface, vm: VirtualMachine, start_directory: Path, tools: Optional[JackTools] = None, back_to: str = ""
+    surface,
+    vm: VirtualMachine,
+    start_directory: Path,
+    tools: Optional[JackTools] = None,
+    back_to: str = "",
+    decompiler: Optional[Decompiler] = None,
 ) -> Tuple[str, Optional[List[Path]]]:
     """
     Show the file picker on `surface` until the user picks a program that
@@ -465,10 +509,13 @@ def choose_program(
     Ctrl+J in the picker opens it in the compiler's window.
 
     `back_to` names what Esc returns to ("" in the first picker, where Esc quits).
+    If jack-decompiler is installed, Ctrl+U opens the selection in it
+    (the first time, it asks where the decompiler is).
 
     Returns (outcome, files) - outcome is "play", "cancel" or "quit".
     """
     tools = tools if tools is not None else JackTools()
+    decompiler = decompiler if decompiler is not None else Decompiler()
     message = ""
     failed_folder: Optional[Path] = None  # Jack source that didn't compile
     while True:
@@ -476,8 +523,20 @@ def choose_program(
             surface, start_directory, message, tools.can_compile,
             failed_folder if tools.gui is not None else None, tools.open_in_compiler, back_to,
             offer_find_compiler=not tools.can_compile and tools.can_locate(),
+            open_in_decompiler=decompiler.open if decompiler.app is not None else None,
+            offer_find_decompiler=decompiler.can_locate(),
         )  # fmt: skip
         outcome, picked = picker.run()
+        if outcome == FIND_DECOMPILER:
+            found, message = decompiler.locate(surface)
+            if found == LOCATE_QUIT:
+                return QUIT, None
+            if decompiler.app is not None and picked:
+                message = decompiler.open(picked)  # what Ctrl+U was pressed on
+            if message:
+                print(message)
+            start_directory = picker.state.directory
+            continue
         if outcome == FIND_COMPILER:
             found, message = tools.locate(surface)
             if found == LOCATE_QUIT:
@@ -511,7 +570,10 @@ def choose_program(
 
 
 def open_picker_window(
-    vm: VirtualMachine, start_directory: Path = GAMES_FOLDER, tools: Optional[JackTools] = None
+    vm: VirtualMachine,
+    start_directory: Path = GAMES_FOLDER,
+    tools: Optional[JackTools] = None,
+    decompiler: Optional[Decompiler] = None,
 ) -> Optional[List[Path]]:
     """
     Used when jackvm is started without a program: open a window just for
@@ -521,7 +583,7 @@ def open_picker_window(
     pygame.init()
     pygame.display.set_caption("JackVM (Python) - choose a program")
     surface = pygame.display.set_mode((900, 620))
-    outcome, files = choose_program(surface, vm, start_directory, tools)
+    outcome, files = choose_program(surface, vm, start_directory, tools, decompiler=decompiler)
     if outcome != PLAY:
         pygame.quit()
         return None

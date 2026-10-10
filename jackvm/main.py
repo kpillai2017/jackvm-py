@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 from . import __version__
+from .decompiler_link import Decompiler
 from .jack_sources import JackCompileError, JackTools, describe_program
 from .memory_map import REGISTER_NAMES
 from .parser import ParseError
@@ -132,13 +133,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     vm = VirtualMachine()
     files: List[Path] = []
     tools = JackTools()  # the Jack compiler, if it's installed (see jack_sources.py)
+    decompiler = Decompiler()  # jack-decompiler, if it's installed (Ctrl+U, see decompiler_link.py)
 
     if use_gui_picker:
         # Imported here so --headless works even where pygame isn't installed.
         from .player import open_picker_window
 
         start = Path(args.program[0]).expanduser() if args.program else GAMES_FOLDER
-        files = open_picker_window(vm, start if start.is_dir() else GAMES_FOLDER, tools)
+        files = open_picker_window(vm, start if start.is_dir() else GAMES_FOLDER, tools, decompiler)
         if not files:
             return 0  # the user cancelled or closed the window
     else:
@@ -165,6 +167,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         vm,
         files=files,
         tools=tools,
+        decompiler=decompiler,
         scale=args.scale,
         show_debugger=not args.no_debugger,
         ticks_per_frame=args.ticks_per_frame,

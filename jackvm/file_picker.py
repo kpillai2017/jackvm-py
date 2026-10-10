@@ -13,7 +13,9 @@ If the Jack compiler (https://github.com/kpillai2017/jack-compiler) is
 installed, the picker also lists .jack files and offers "[compile+play]"
 for folders of Jack source - see jack_sources.py. If the code has a
 mistake, the first error shows at the top and Ctrl+J opens the folder in
-the compiler's window.
+the compiler's window. If jack-decompiler is installed, Ctrl+U opens the
+selected .vm file or folder (or else the folder you're in) in the
+decompiler's window - see decompiler_link.py.
 
 You can play either:
 
@@ -66,6 +68,7 @@ PLAY = "play"  # the user chose something to run
 CANCEL = "cancel"  # the user pressed Esc / Back / Quit (the caller decides which it means)
 QUIT = "quit"  # the user closed the window
 FIND_COMPILER = "find-compiler"  # Ctrl+J without a Jack compiler: ask where it is
+FIND_DECOMPILER = "find-decompiler"  # Ctrl+U without the decompiler: ask where it is (then open the files)
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +209,22 @@ class PickerState:
             return None
         return files
 
+    def decompile_targets(self) -> Optional[List[Path]]:
+        """
+        Ctrl+U: the .vm files to open in the decompiler - the selected .vm
+        file, the .vm files of the selected folder, or else (on the ".." row
+        or a .jack file) those of the folder we're looking at.
+        """
+        entry = self.entries[self.selected] if self.entries else None
+        if entry is not None and entry.kind == "vm":
+            return [entry.path]
+        folder = entry.path if entry is not None and entry.kind == "folder" else self.directory
+        files = vm_files_in(folder)
+        if not files:
+            self.message = f"There are no .vm files to decompile directly inside {folder.name or folder}/"
+            return None
+        return files
+
     def current_folder_vm_count(self) -> int:
         return sum(1 for e in self.entries if e.kind == "vm")
 
@@ -241,6 +260,8 @@ class FilePicker:
         open_in_compiler=None,
         back_to: str = "",
         offer_find_compiler: bool = False,
+        open_in_decompiler=None,
+        offer_find_decompiler: bool = False,
     ) -> None:
         import pygame  # imported here so the logic above works without pygame
 
@@ -259,6 +280,11 @@ class FilePicker:
         # No Jack compiler found? Ctrl+J ends the picker with FIND_COMPILER,
         # and choose_program asks where it is (see locate_app.py).
         self.offer_find_compiler = offer_find_compiler
+        # Ctrl+U: the function that opens .vm files in jack-decompiler
+        # (Decompiler.open), or - if it isn't found - end the picker with
+        # FIND_DECOMPILER so choose_program can ask where it is.
+        self.open_in_decompiler = open_in_decompiler
+        self.offer_find_decompiler = offer_find_decompiler
         self.font = pygame.font.SysFont("menlo,consolas,dejavusansmono,couriernew,monospace", 15)
         self.small = pygame.font.SysFont("menlo,consolas,dejavusansmono,couriernew,monospace", 13)
         self.row_height = self.font.get_linesize() + 8
@@ -310,6 +336,13 @@ class FilePicker:
                 print(state.message)
             elif ctrl and event.key == pygame.K_j and self.offer_find_compiler:
                 return FIND_COMPILER, None
+            elif ctrl and event.key == pygame.K_u and self.open_in_decompiler:
+                targets = state.decompile_targets()
+                if targets:
+                    state.message = self.open_in_decompiler(targets)
+                print(state.message)
+            elif ctrl and event.key == pygame.K_u and self.offer_find_decompiler:
+                return FIND_DECOMPILER, state.decompile_targets()
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 files = state.play_folder_entry() if ctrl else state.activate()
             elif event.key in (pygame.K_BACKSPACE, pygame.K_LEFT):
@@ -472,8 +505,13 @@ class FilePicker:
             parts.append("Ctrl+J: open in compiler")
         elif self.offer_find_compiler:
             parts.append("Ctrl+J: find the Jack compiler")
-        for drop in ("Backspace: up", "Enter: open", "Ctrl+Enter: play folder"):
+        if self.open_in_decompiler:
+            parts.append("Ctrl+U: decompile")
+        elif self.offer_find_decompiler:
+            parts.append("Ctrl+U: find the decompiler")
+        for drop in ("Backspace: up", "Ctrl+U: find the decompiler", "Enter: open", "Ctrl+Enter: play folder"):
             if self.small.size("   ".join(parts))[0] <= width:
                 break
-            parts.remove(drop)
+            if drop in parts:
+                parts.remove(drop)
         return "   ".join(parts)
