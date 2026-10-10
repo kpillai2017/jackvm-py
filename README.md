@@ -155,6 +155,7 @@ Hold **Ctrl** (or **Cmd ⌘** on a Mac) so the game doesn't receive the key:
 | Ctrl+D | show / hide the debugger panel |
 | Ctrl+O | open another program (the file picker) |
 | Ctrl+J | open the program's `.jack` sources in [jack-compiler](https://github.com/kpillai2017/jack-compiler)'s window (the first time, it asks where jack-compiler is) |
+| Ctrl+U | open the program's `.vm` files in [jack-decompiler](https://github.com/kpillai2017/jack-decompiler)'s window, which turns them back into Jack source ([details](#decompiling-vm-code-with-jack-decompiler)) |
 | **Hold** Esc for 1 s | go back to the file picker (a bar shows the countdown; let go to cancel) |
 | Esc, once the program has finished | go back to the file picker straight away |
 | Ctrl+Q | quit (closing the window works too) |
@@ -311,6 +312,25 @@ find each other from any folder. If the lookup is switched off (`JACKC=off`, or
 `off` in the config file), the shortcut reads `Ctrl+J compiler (not installed)`.
 The two apps only run each other's commands and never import each other's code.
 
+### Decompiling VM code (with jack-decompiler)
+
+[jack-decompiler](https://github.com/kpillai2017/jack-decompiler) turns `.vm`
+files back into readable Jack source. When it's installed, **Ctrl+U**
+("un-compile") opens the running program in its window. It's found the same
+four ways as the compiler (`jackvm/decompiler_link.py`):
+
+1. `JACKDECOMP="python3 -m jack_decompiler"` (or `JACKDECOMP=off`)
+2. `jackdecomp = ~/code/jack-decompiler` under `[apps]` in the config file
+3. `pip install -e ../jack-decompiler` into the same environment
+4. a `jackdecomp` command on the `PATH`
+
+Until it's found, the shortcuts box shows `Ctrl+U find decompiler...`: press
+it, open your `jack-decompiler` folder and press **Use this folder**.
+
+**Ctrl+U works in the file picker too**, without running anything: it opens
+the selected `.vm` file, or all the `.vm` files of the selected folder (on the
+`..` row: the folder you're in), in the decompiler.
+
 ---
 
 ## 6. How the code is organised
@@ -336,6 +356,7 @@ jackvm-py/
 │   ├── main.py        ⑫ the command line (python -m jackvm ...)
 │   ├── jack_sources.py   run .jack source by calling jack-compiler first
 │   ├── integrations.py   find jack-compiler (shared with that repository)
+│   ├── decompiler_link.py Ctrl+U: open the program in jack-decompiler
 │   └── locate_app.py     "where is it?" folder chooser for Ctrl+J (shared too)
 ├── games/             ready-to-run programs, one folder per game
 │   └── pong/          Main.vm, Ball.vm, Bat.vm, PongGame.vm (one per class)

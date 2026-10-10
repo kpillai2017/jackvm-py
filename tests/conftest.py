@@ -28,6 +28,7 @@ os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")  # skip pygame's "Hello
 # need one pass a fake (see tests/test_jack_sources.py). "off" disables it.
 os.environ["JACKC"] = "off"
 os.environ["JACKC_GUI"] = "off"
+os.environ["JACKDECOMP"] = "off"  # ...nor a real Jack decompiler (see tests/test_decompiler_link.py)
 
 # ...and never read or write the real config file (~/.config/jack-tools/config.ini):
 # tests that need one make their own (see tests/test_locate_app.py).
