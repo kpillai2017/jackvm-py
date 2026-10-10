@@ -2,14 +2,19 @@
 test_decompiler_link.py - Ctrl+U: open the program in jack-decompiler.
 =====================================================================
 
-The real decompiler lives in another repository (jack-decompiler), so these
-tests use a tiny FAKE `jackdecomp`: a Python script that writes the
+The real decompiler lives in another repository (jack-decompiler), so most
+of these tests use a tiny FAKE `jackdecomp`: a Python script that writes the
 arguments it was given into opened.txt, next to the first .vm file.
+
+The tests at the end use the REAL jack-decompiler, when it's installed in
+this Python environment (CI clones and installs it - see
+.github/workflows/tests.yml); otherwise they're skipped.
 """
 
 import os
 import re
 import stat
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -20,6 +25,7 @@ import pytest
 from jackvm import VirtualMachine
 from jackvm.decompiler_link import JACKDECOMP, Decompiler
 from jackvm.integrations import Companion, find, not_found_message
+from jackvm.program_files import GAMES_FOLDER
 from jackvm.player import Player
 
 FAKE_DECOMPILER = """
@@ -93,11 +99,18 @@ def test_the_path_is_tried_last():
     assert found.command == ["/opt/jackdecomp"] and found.found_by == "PATH"
 
 
+def decompiler_checkout() -> Path:
+    """$JACK_DECOMPILER_CHECKOUT (CI clones one there), or ../jack-decompiler."""
+    if os.environ.get("JACK_DECOMPILER_CHECKOUT"):
+        return Path(os.environ["JACK_DECOMPILER_CHECKOUT"])
+    return Path(__file__).resolve().parents[2] / "jack-decompiler"
+
+
 def test_it_matches_what_jack_decompiler_advertises():
     """jack-decompiler's pyproject.toml must offer the command and entry point we look for."""
-    pyproject = Path(__file__).resolve().parents[2] / "jack-decompiler" / "pyproject.toml"
+    pyproject = decompiler_checkout() / "pyproject.toml"
     if not pyproject.is_file():
-        pytest.skip("jack-decompiler isn't checked out next to jackvm-py")
+        pytest.skip("no jack-decompiler checkout (set $JACK_DECOMPILER_CHECKOUT, or clone it next to jackvm-py)")
     text = pyproject.read_text(encoding="utf-8")
     assert re.search(rf'^{JACKDECOMP.executable}\s*=\s*"{JACKDECOMP.entry}"', text, re.M)
     assert re.search(rf'^{JACKDECOMP.key}\s*=\s*"{JACKDECOMP.entry}"', text, re.M)
@@ -316,3 +329,58 @@ def test_ctrl_o_passes_the_players_decompiler_to_the_picker(fake, program, monke
     assert p._handle_events()
     assert seen["decompiler"] is decompiler
     pygame.quit()
+
+
+# --- the REAL jack-decompiler (skipped unless it's installed) -------------------------
+GAMES = sorted(p.name for p in GAMES_FOLDER.iterdir() if p.is_dir() and any(p.glob("*.vm")))
+
+
+@pytest.fixture
+def real():
+    """jack-decompiler, found the way a `pip install` makes it findable: its entry point."""
+    found = find(JACKDECOMP, environ={"JACK_TOOLS_CONFIG": os.devnull}, which=lambda name: None)
+    if found is None:
+        pytest.skip("jack-decompiler isn't installed in this Python environment")
+    return found
+
+
+def run_real(real, *args):
+    return subprocess.run(real.command + list(args), capture_output=True, text=True, timeout=180)
+
+
+def test_real_decompiler_is_found_by_its_entry_point(real):
+    assert real.found_by == "same Python environment"
+    version = run_real(real, "--version")
+    assert version.returncode == 0 and re.search(r"\d+\.\d+", version.stdout + version.stderr)
+
+
+@pytest.mark.parametrize("game", GAMES)
+def test_real_decompiler_round_trips_every_game(real, game):
+    """Each game decompiles to Jack that recompiles to the very same VM code (and nothing is written)."""
+    before = sorted(p.name for p in (GAMES_FOLDER / game).iterdir())
+    result = run_real(real, "--verify", str(GAMES_FOLDER / game))
+    assert result.returncode == 0, result.stdout + result.stderr
+    classes = sorted(p.stem for p in (GAMES_FOLDER / game).glob("*.vm"))
+    report = result.stdout + result.stderr  # (the report goes to stderr)
+    for name in classes:
+        assert f"OK   {name}: identical after recompiling" in report
+    assert sorted(p.name for p in (GAMES_FOLDER / game).iterdir()) == before
+
+
+def test_real_decompiler_prints_readable_jack(real):
+    result = run_real(real, "--stdout", str(GAMES_FOLDER / "pong"))
+    assert result.returncode == 0, result.stderr
+    for line in ("class PongGame {", "method void moveBall()", "while (", "do Screen."):
+        assert line in result.stdout
+
+
+def test_real_decompiler_window_opens_from_ctrl_u(real, tmp_path):
+    """What Ctrl+U runs: the GUI starts (on SDL's dummy display) and stays open until closed."""
+    files = sorted(str(f) for f in (GAMES_FOLDER / "pong").glob("*.vm"))
+    window = real.launch(files, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    try:
+        time.sleep(3)
+        assert window.poll() is None, window.communicate()[0]
+    finally:
+        window.terminate()
+        window.wait(timeout=30)
