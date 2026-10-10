@@ -266,6 +266,10 @@ python3 -m jackvm projects/09/MyGame/Main.jack   # one file means its whole fold
   folder in `jackc-gui`, which marks each mistake in the code.
 - While a program runs, **Ctrl+J** opens its sources in `jackc-gui`. There,
   **Ctrl+J** runs them back here.
+- To keep the compiled `.vm` files, save them from `jackc-gui` (jack-compiler
+  1.2.0 or later): **Ctrl+S** saves them next to the sources, and
+  **Ctrl+Shift+S** lets you choose the folder, or make a new one with
+  **Ctrl+N**.
 
 Set it up once, side by side:
 
@@ -329,7 +333,7 @@ Install it into the same environment as jackvm, and it's found automatically:
 
 ```bash
 # the released package (see all releases: https://github.com/kpillai2017/jack-decompiler/releases)
-pip install https://github.com/kpillai2017/jack-decompiler/releases/download/v0.1.0/jack_decompiler-0.1.0-py3-none-any.whl
+pip install https://github.com/kpillai2017/jack-decompiler/releases/download/v0.2.0/jack_decompiler-0.2.0-py3-none-any.whl
 # or a checkout you can change, next to jackvm-py
 git clone https://github.com/kpillai2017/jack-decompiler.git
 pip install -e ./jack-decompiler
@@ -348,6 +352,13 @@ it, open your `jack-decompiler` folder and press **Use this folder**.
 **Ctrl+U works in the file picker too**, without running anything: it opens
 the selected `.vm` file, or all the `.vm` files of the selected folder (on the
 `..` row: the folder you're in), in the decompiler.
+
+**Saving the Jack source:** in the decompiler's window, **Ctrl+S** saves the
+`.jack` files next to the `.vm` files. For the programs in `games/`, that
+means inside this repository. Hand-written `.jack` files are never
+overwritten; the files go into a `decompiled/` sub-folder instead. To save
+somewhere else, press **Ctrl+Shift+S** (jack-decompiler 0.2.0 or later) and
+choose a folder, or make one with **Ctrl+N**.
 
 ---
 
