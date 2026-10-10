@@ -53,6 +53,19 @@ jobs:
           echo "JACK_TOOLS_COMPANION=$dest" >> "$GITHUB_ENV"
           echo "Comparing with jack-compiler @ $(git -C "$dest" rev-parse --abbrev-ref HEAD) $(git -C "$dest" rev-parse --short HEAD)"
 
+      - name: Fetch and install jack-decompiler (for Ctrl+U's tests with the real decompiler)
+        shell: bash
+        run: |
+          # The branch with the same name as this one, if jack-decompiler has it; else main.
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          dest="$RUNNER_TEMP/jack-decompiler"
+          git clone --quiet --depth 1 --branch "$branch" https://github.com/kpillai2017/jack-decompiler.git "$dest" 2>/dev/null \
+            || git clone --quiet --depth 1 https://github.com/kpillai2017/jack-decompiler.git "$dest"
+          # Installed like a user would, so jackvm finds it through its "jack_tools" entry point.
+          python -m pip install -e "$dest"
+          echo "JACK_DECOMPILER_CHECKOUT=$dest" >> "$GITHUB_ENV"
+          echo "Testing with jack-decompiler @ $(git -C "$dest" rev-parse --abbrev-ref HEAD) $(git -C "$dest" rev-parse --short HEAD)"
+
       - name: Run the tests
         run: python -m pytest -v
 
